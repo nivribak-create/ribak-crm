@@ -8,6 +8,8 @@
 //   CRM_PASSWORD      – the shared login password
 //   SESSION_SECRET    – optional; random string used to sign session cookies
 //   SESSION_DAYS      – optional; how long a login lasts (default 30)
+//   WEBHOOK_SECRET    – optional; enables POST /api/inbound/lead for
+//                       automations (ManyChat, Make, n8n…) that push leads in
 
 const path = require('path');
 const crypto = require('crypto');
@@ -17,7 +19,7 @@ const mysql = require('mysql2/promise');
 const PORT = Number(process.env.PORT) || 3000;
 const {
   DB_HOST, DB_PORT = '3306', DB_NAME, DB_USER, DB_PASSWORD,
-  CRM_PASSWORD, SESSION_SECRET, SESSION_DAYS = '30',
+  CRM_PASSWORD, SESSION_SECRET, SESSION_DAYS = '30', WEBHOOK_SECRET,
 } = process.env;
 
 const dbConfigured = Boolean(DB_HOST && DB_NAME && DB_USER && typeof DB_PASSWORD === 'string');
@@ -224,6 +226,68 @@ leadsRouter.put('/settings', wrap(async (req, res) => {
   finally { conn.release(); }
   res.json({ ok: true });
 }));
+
+// ---- inbound leads from automations --------------------------------------
+// POST /api/inbound/lead  (header X-Webhook-Key: <WEBHOOK_SECRET>, or ?key=)
+// Body: { name?, phone?, text?, source?, notes?, username? }
+// The phone may arrive in `phone` or anywhere inside `text` (an Instagram
+// DM, say). A lead that already exists with that phone gets a note instead
+// of a duplicate.
+const PHONE_RE = /(?:\+?972[\s-]?|0)(5\d)[\s-]?(\d{3})[\s-]?(\d{4})/;
+function extractPhone(...candidates) {
+  for (const c of candidates) {
+    if (typeof c !== 'string') continue;
+    const m = c.match(PHONE_RE);
+    if (m) return `0${m[1]}${m[2]}${m[3]}`;
+  }
+  return null;
+}
+const webhookAuthed = req => {
+  if (!WEBHOOK_SECRET) return false;
+  const given = String(req.get('x-webhook-key') || req.query.key || '');
+  return given.length === WEBHOOK_SECRET.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(WEBHOOK_SECRET));
+};
+const newId = () => Date.now().toString(36) + crypto.randomBytes(4).toString('hex').slice(0, 6);
+
+app.post('/api/inbound/lead', wrap(async (req, res) => {
+  if (!WEBHOOK_SECRET) return res.status(503).json({ error: 'webhook_not_configured', code: 'webhook_not_configured' });
+  if (!webhookAuthed(req)) return res.status(401).json({ error: 'unauthorized', code: 'unauthorized' });
+  await ensureSchema();
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  const text = String(b.text || b.message || '').trim().slice(0, 1000);
+  const phone = extractPhone(b.phone, text);
+  if (!phone) return res.status(422).json({ error: 'no_phone', code: 'no_phone', message: 'no Israeli mobile number found' });
+  const username = String(b.username || b.ig_username || '').trim().replace(/^@/, '');
+  const name = String(b.name || b.full_name || '').trim() || (username ? `@${username}` : 'ליד מאינסטגרם');
+  const source = String(b.source || 'אינסטגרם').trim().slice(0, 40);
+  const now = new Date().toISOString();
+  const noteText = [text ? `הודעה: "${text.slice(0, 300)}"` : '', username ? `אינסטגרם: @${username}` : ''].filter(Boolean).join(' · ');
+
+  // dedupe by phone – scan is fine at this scale
+  const [rows] = await pool.query('SELECT id, data FROM leads');
+  let existing = null;
+  for (const r of rows) {
+    try { const l = JSON.parse(r.data); if (String(l.phone || '').replace(/\D/g, '') === phone) { existing = l; break; } } catch { /* skip */ }
+  }
+  if (existing) {
+    existing.events = [...(existing.events || []), { t: now, type: 'note', text: `פנייה חוזרת (${source})${noteText ? ' · ' + noteText : ''}` }];
+    existing.updatedAt = now;
+    if (existing.status === 'active' && !existing.nextAt) existing.nextAt = now.slice(0, 10);
+    await pool.query('UPDATE leads SET data = ?, updated_at = ? WHERE id = ?', [JSON.stringify(existing), toSqlDate(now), existing.id]);
+    return res.json({ ok: true, created: false, id: existing.id });
+  }
+  const lead = {
+    id: newId(), name, phone, source,
+    notes: String(b.notes || '').trim().slice(0, 500) || (username ? `@${username}` : ''),
+    createdAt: now, updatedAt: now,
+    stage: 'new', status: 'active', lostReason: null, lostAt: null,
+    nextAt: now.slice(0, 10), attempts: 0,
+    events: [{ t: now, type: 'created', stage: 'new' }, ...(noteText ? [{ t: now, type: 'note', text: noteText }] : [])],
+  };
+  await pool.query('INSERT INTO leads (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)', [lead.id, JSON.stringify(lead), toSqlDate(now), toSqlDate(now)]);
+  res.status(201).json({ ok: true, created: true, id: lead.id });
+}));
+app.get('/api/inbound/lead', (req, res) => res.status(405).json({ error: 'use_post', code: 'use_post', message: 'POST JSON {name, phone|text, username} with header X-Webhook-Key' }));
 
 app.use('/api', leadsRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found', code: 'not_found' }));
