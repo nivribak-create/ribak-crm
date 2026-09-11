@@ -1,7 +1,7 @@
 # Ribak CRM
 
-באוויר: **https://greenyellow-hare-727269.hostingersite.com** (Hostinger, נפרס אוטומטית מ-`main`)
-גיבוי: https://nivribak-create.github.io/ribak-crm/ (GitHub Pages)
+באוויר: **https://blanchedalmond-yak-848858.hostingersite.com** (Hostinger Node.js + MySQL, נפרס אוטומטית מ-`main`)
+גיבוי במצב מקומי: https://nivribak-create.github.io/ribak-crm/ (GitHub Pages)
 
 מערכת ניהול לידים עם אנליטיקת המרה מלאה – מליד חדש ועד סגירת מנוי.
 ממשק ב-HTML/CSS/JS ללא build, ושרת Node.js/Express קטן ששומר את הלידים ב-MySQL ומגן עליהם בסיסמה אחת משותפת. עובד בדפדפן ובטלפון (ניתן להתקין כאפליקציה במסך הבית).
