@@ -44,10 +44,15 @@
         <button class="icon-btn" data-global="data" title="גיבוי, ייבוא ונתוני דוגמה" aria-label="נתונים">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
         </button>
+        <button class="icon-btn" id="logout" data-global="logout" title="יציאה מהמערכת" aria-label="יציאה" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 4v16"/></svg>
+        </button>
         <button class="btn btn--primary" data-global="add">+ ליד חדש</button>
       </div>
     </div>
   </header>
+
+  <div class="mode-note" id="mode" hidden>מצב מקומי – הלידים נשמרים בדפדפן הזה בלבד</div>
 
   <div class="sample-banner" id="sample-banner" hidden>
     <span>אלה נתוני דוגמה, כדי שתראה איך המערכת נראית מלאה.</span>

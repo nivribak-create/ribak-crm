@@ -1,11 +1,11 @@
 // Network-first service worker: the app always tries the network, and
 // falls back to the last cached copy when offline. Bump VERSION on deploy
 // to drop stale caches.
-const VERSION = 'ribak-crm-v1';
+const VERSION = 'ribak-crm-v2';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest', './icons/icon.svg',
   './js/app.js', './js/model.js', './js/util.js', './js/store.js', './js/analytics.js', './js/sample.js',
-  './js/charts.js', './js/ui.js', './js/lead.js', './js/views/dashboard.js', './js/views/pipeline.js', './js/views/leads.js',
+  './js/charts.js', './js/ui.js', './js/lead.js', './js/api.js', './js/views/dashboard.js', './js/views/pipeline.js', './js/views/leads.js',
 ];
 
 self.addEventListener('install', e => {
@@ -18,6 +18,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return; // fonts etc. go straight to the network
+  if (url.pathname.includes('/api/')) return;   // never cache the API
   e.respondWith(
     fetch(e.request).then(res => {
       const copy = res.clone();
