@@ -1,5 +1,8 @@
 # Ribak CRM
 
+באוויר: **https://greenyellow-hare-727269.hostingersite.com** (Hostinger, נפרס אוטומטית מ-`main`)
+גיבוי: https://nivribak-create.github.io/ribak-crm/ (GitHub Pages)
+
 מערכת ניהול לידים עם אנליטיקת המרה מלאה – מליד חדש ועד סגירת מנוי.
 אפליקציית ווב נטו: HTML/CSS/JS ללא שרת וללא build, עובדת בדפדפן ובטלפון (ניתן להתקין כאפליקציה במסך הבית).
 
