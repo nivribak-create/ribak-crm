@@ -1,5 +1,5 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData } from './ui.js';
 import { openScript } from './callscript.js';
@@ -112,6 +112,41 @@ export function openChurnDialog(lead) {
   });
 }
 
+// Sometimes you only find out mid-call that this is not a customer at all
+// but somebody to collaborate with. This moves them across without losing
+// the phone number or what was already written down.
+export function openToInfluencer(lead) {
+  const existing = store.getInfluencers().find(i =>
+    i.handle.toLowerCase() === handleFrom(lead.name) || (i.phone && i.phone === lead.phone));
+  if (existing) { toast(`@${existing.handle} כבר ברשימת המשפיענים`, 'warn'); return; }
+
+  const body = `
+    <form class="form" id="to-infl">
+      <p class="modal__text">${esc(lead.name)} יעבור מהפייפליין לרשימת המשפיענים.</p>
+      ${field('שם משתמש באינסטגרם', `<input class="input" name="handle" required value="${esc(handleFrom(lead.name))}" dir="ltr" autocomplete="off">`, 'זה מה שיקשר אותו ללידים שהוא יביא')}
+      ${field('שם', `<input class="input" name="name" value="${esc(lead.name.replace(COLLAB_RE, '').trim())}" autocomplete="off">`)}
+      ${field('סטטוס', `<select class="input" name="status">${INFLUENCER_STATUSES.map(st => `<option value="${st.id}">${esc(st.label)}</option>`).join('')}</select>`)}
+      ${field('הערות', `<textarea class="input" name="notes" rows="2">${esc(lead.notes || '')}</textarea>`)}
+      <label class="switch"><input type="checkbox" name="remove" checked><span>גם להוציא אותו מהפייפליין</span></label>
+    </form>`;
+  const m = openModal({
+    title: 'העברה למשפיענים',
+    body,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="to-infl">העבר</button>`,
+  });
+  m.el.querySelector('#to-infl').addEventListener('submit', e => {
+    e.preventDefault();
+    const d = formData(e.target);
+    if (!d.handle) { toast('צריך שם משתמש', 'warn'); return; }
+    const saved = store.saveInfluencer({ handle: d.handle, name: d.name, phone: lead.phone, status: d.status, notes: d.notes });
+    if (!saved) { toast('שם המשתמש לא תקין', 'warn'); return; }
+    if (d.remove) store.markLost(lead.id, 'irrelevant', 'הועבר לרשימת המשפיענים');
+    m.close();
+    closeDrawer();
+    toast(`@${saved.handle} עבר למשפיענים`, 'good');
+  });
+}
+
 // ---- shared actions -----------------------------------------------------
 export function advance(lead) {
   const next = nextStage(lead.stage);
@@ -181,6 +216,7 @@ export function handleAction(e) {
     case 'lost': openLostDialog(lead); break;
     case 'churn': openChurnDialog(lead); break;
     case 'script': openScript(lead.id, 'sales'); break;
+    case 'to-influencer': openToInfluencer(lead); break;
     case 'subscribe': subscribeNow(lead); break;
     case 'restore': restore(lead); break;
     case 'edit': openLeadForm(lead); break;
@@ -317,5 +353,8 @@ function renderDrawer() {
       <form id="note-form" class="note-form"><input class="input" placeholder="הוסף הערה להיסטוריה…" autocomplete="off"><button class="btn btn--sm" type="submit">הוסף</button></form>
       <ol class="tl">${timeline}</ol>
     </section>
-    <footer class="drawer__foot"><button class="btn btn--sm btn--ghost btn--lost" data-act="delete" data-id="${lead.id}">מחיקת הליד</button></footer>`;
+    <footer class="drawer__foot">
+      <button class="btn btn--sm" data-act="to-influencer" data-id="${lead.id}">⤴ העבר למשפיענים</button>
+      <button class="btn btn--sm btn--ghost btn--lost" data-act="delete" data-id="${lead.id}">מחיקת הליד</button>
+    </footer>`;
 }

@@ -3,23 +3,10 @@
 // Leads tagged with an influencer's handle feed each card's numbers, so a
 // collaboration is judged by customers rather than by reach.
 
-import { INFLUENCER_STATUSES, INFLUENCER_STATUS_BY_ID, INFLUENCER_SOURCE, everSubscribed, stageIndex } from '../model.js';
+import { INFLUENCER_STATUSES, INFLUENCER_STATUS_BY_ID, INFLUENCER_SOURCE, everSubscribed, stageIndex, COLLAB_RE, looksLikeCollab, handleFrom } from '../model.js';
 import * as store from '../store.js';
 import { openModal, confirmDialog, toast, field, formData } from '../ui.js';
 import { esc, fmtNum, pct1, fmtPhone, telLink, waLink, normPhone } from '../util.js';
-
-// Some people in the contact list were never customers — they are people a
-// collaboration was discussed with, and someone wrote that next to their
-// name. This finds them so they can be moved where they belong.
-const COLLAB_RE = /שת["'׳״]?פ|שיתוף\s*פעולה|משפיע|קולאב|collab|influencer|ambassador|ברטר/i;
-const looksLikeCollab = l => COLLAB_RE.test(`${l.name} ${l.notes}`);
-
-const handleFrom = name => String(name || '')
-  .replace(COLLAB_RE, '')
-  .replace(/[^\p{L}\p{N}_.]+/gu, '_')
-  .replace(/^_+|_+$/g, '')
-  .slice(0, 30)
-  .toLowerCase();
 
 // Someone already moved across may have been given a different handle, so
 // the phone number is what reliably says "this one is already handled".

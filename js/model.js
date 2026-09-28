@@ -118,6 +118,19 @@ export const INFLUENCER_STATUSES = [
 ];
 export const INFLUENCER_STATUS_BY_ID = Object.fromEntries(INFLUENCER_STATUSES.map(s => [s.id, s]));
 
+// Some contacts were never customers — a collaboration was discussed and
+// somebody wrote that next to the name.
+export const COLLAB_RE = /שת["'׳״]?פ|שיתוף\s*פעולה|משפיע|קולאב|collab|influencer|ambassador|ברטר/i;
+export const looksLikeCollab = l => COLLAB_RE.test(`${l.name} ${l.notes}`);
+
+// A first guess at an Instagram handle, from whatever name we have.
+export const handleFrom = name => String(name || '')
+  .replace(COLLAB_RE, '')
+  .replace(/[^\p{L}\p{N}_.]+/gu, '_')
+  .replace(/^_+|_+$/g, '')
+  .slice(0, 30)
+  .toLowerCase();
+
 export const EVENT_LABELS = {
   created:  'ליד נכנס למערכת',
   advanced: 'התקדם לשלב',
