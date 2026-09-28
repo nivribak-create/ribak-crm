@@ -6,11 +6,13 @@ import { downloadText, fmtNum, esc } from './util.js';
 import * as dashboard from './views/dashboard.js';
 import * as pipeline from './views/pipeline.js';
 import * as leads from './views/leads.js';
+import * as triage from './views/triage.js';
 
 const VIEWS = {
   dashboard: { title: 'לוח בקרה', render: dashboard.render },
   pipeline:  { title: 'פייפליין',  render: pipeline.render },
   leads:     { title: 'לידים',     render: leads.render },
+  triage:    { title: 'מיון מהיר', render: triage.render },
 };
 
 const main = document.getElementById('view');

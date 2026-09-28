@@ -1,5 +1,5 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, STATUS, EVENT_LABELS, FINAL_STAGE } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData } from './ui.js';
 import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso } from './util.js';
@@ -11,7 +11,12 @@ export function openLeadForm(lead = null) {
     <form class="form" id="lead-form">
       ${field('שם', `<input class="input" name="name" required value="${esc(lead?.name || '')}" placeholder="שם מלא" autocomplete="off">`)}
       ${field('טלפון', `<input class="input" name="phone" required inputmode="tel" value="${esc(lead?.phone || '')}" placeholder="050-0000000" autocomplete="off">`)}
-      ${field('מקור', select('source', SOURCES, lead?.source || 'אינסטגרם'))}
+      ${field('מקור', select('source', SOURCES, lead?.source || SOURCES[0]))}
+      <label class="field" data-infl ${lead?.source === INFLUENCER_SOURCE ? '' : 'hidden'}>
+        <span class="field__label">שם המשפיען</span>
+        <input class="input" name="influencer" list="infl-list" value="${esc(lead?.influencer || '')}" placeholder="למשל: @noa_fit" autocomplete="off">
+        <datalist id="infl-list">${store.knownInfluencers().map(i => `<option value="${esc(i)}"></option>`).join('')}</datalist>
+      </label>
       ${field('פעולה הבאה', `<input class="input" type="date" name="nextAt" value="${esc(lead?.nextAt || '')}">`, 'מתי לחזור אליו')}
       ${field('הערות', `<textarea class="input" name="notes" rows="3" placeholder="מה הוא מחפש, שעות נוחות, כל דבר שיעזור בשיחה">${esc(lead?.notes || '')}</textarea>`)}
     </form>`;
@@ -20,12 +25,16 @@ export function openLeadForm(lead = null) {
     body,
     footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="lead-form">${isEdit ? 'שמירה' : 'הוספת ליד'}</button>`,
   });
-  m.el.querySelector('#lead-form').addEventListener('submit', e => {
+  const form0 = m.el.querySelector('#lead-form');
+  form0.addEventListener('change', e => {
+    if (e.target.name === 'source') form0.querySelector('[data-infl]').hidden = e.target.value !== INFLUENCER_SOURCE;
+  });
+  form0.addEventListener('submit', e => {
     e.preventDefault();
     const d = formData(e.target);
     if (!d.name || !d.phone) return;
     if (isEdit) {
-      store.updateLead(lead.id, { name: d.name, phone: d.phone, source: d.source, notes: d.notes, nextAt: d.nextAt || null });
+      store.updateLead(lead.id, { name: d.name, phone: d.phone, source: d.source, influencer: d.source === INFLUENCER_SOURCE ? d.influencer : '', notes: d.notes, nextAt: d.nextAt || null });
       toast('הפרטים נשמרו');
     } else {
       store.addLead(d);
@@ -203,7 +212,7 @@ function renderDrawer() {
       <button class="icon-btn" data-close-drawer aria-label="סגירה">✕</button>
       <div>
         <h2 class="drawer__name">${esc(lead.name)}</h2>
-        <div class="drawer__sub">${statusTag}<span class="muted">נכנס ${fmtDateLong(lead.createdAt)} · ${esc(lead.source)}</span></div>
+        <div class="drawer__sub">${statusTag}<span class="muted">נכנס ${fmtDateLong(lead.createdAt)} · ${esc(lead.source)}${lead.influencer ? ' · ' + esc(lead.influencer) : ''}</span></div>
       </div>
     </header>
     <div class="drawer__contact">

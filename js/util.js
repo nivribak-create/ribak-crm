@@ -62,6 +62,37 @@ export const telLink = p => `tel:${normPhone(p)}`;
 
 export const plural = (n, one, many) => (n === 1 ? one : many);
 
+// ---- the weekly rhythm -------------------------------------------------
+// Orders close Wednesday 23:00; whatever is in by then is delivered the
+// following Sunday morning. Everything about urgency hangs off these two.
+export const ORDER_DEADLINE_DAY = 3;   // Wednesday
+export const ORDER_DEADLINE_HOUR = 23;
+
+export function nextDeadline(from = new Date()) {
+  const d = new Date(from);
+  const wed = new Date(d);
+  wed.setDate(d.getDate() + ((ORDER_DEADLINE_DAY - d.getDay() + 7) % 7));
+  wed.setHours(ORDER_DEADLINE_HOUR, 0, 0, 0);
+  if (wed <= d) wed.setDate(wed.getDate() + 7);
+  return wed;
+}
+
+// The Sunday a lead closing now would receive food on.
+export function targetSunday(from = new Date()) {
+  const sun = new Date(nextDeadline(from));
+  sun.setDate(sun.getDate() + 4);
+  sun.setHours(8, 0, 0, 0);
+  return sun;
+}
+
+export function deadlineLabel(from = new Date()) {
+  const ms = nextDeadline(from) - from;
+  const hours = Math.floor(ms / 3600000);
+  if (hours < 1) return `נסגר בעוד ${Math.max(1, Math.round(ms / 60000))} דק׳`;
+  if (hours < 24) return `נסגר בעוד ${hours} שע׳`;
+  return `נסגר בעוד ${Math.floor(hours / 24)} ימים`;
+}
+
 export const debounce = (fn, ms = 150) => {
   let t;
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };

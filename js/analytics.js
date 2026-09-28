@@ -77,8 +77,8 @@ export function computeAnalytics(allLeads, filters = {}) {
     const next = STAGES[i + 1];
     const samples = [];
     for (const l of leads) {
-      const a = l.events.find(e => (e.type === 'advanced' && e.stage === s.id) || (s.id === 'new' && e.type === 'created'));
-      const b = l.events.find(e => e.type === 'advanced' && e.stage === next.id);
+      const a = l.events.find(e => !e.imported && ((e.type === 'advanced' && e.stage === s.id) || (s.id === 'new' && (e.type === 'created' || e.type === 'imported'))));
+      const b = l.events.find(e => !e.imported && e.type === 'advanced' && e.stage === next.id);
       if (a && b) samples.push(Math.max(0, (new Date(b.t) - new Date(a.t)) / 86400000));
     }
     const avg = samples.length ? samples.reduce((x, y) => x + y, 0) / samples.length : null;
@@ -86,7 +86,7 @@ export function computeAnalytics(allLeads, filters = {}) {
     return { from: s, to: next, n: samples.length, avgDays: avg, medianDays: med };
   });
   const wonSamples = leads.filter(l => l.status === 'won').map(l => {
-    const e = l.events.find(x => x.type === 'advanced' && x.stage === 'subscribed');
+    const e = l.events.find(x => !x.imported && x.type === 'advanced' && x.stage === 'subscribed');
     return e ? (new Date(e.t) - new Date(l.createdAt)) / 86400000 : null;
   }).filter(x => x != null);
   const avgDaysToWin = wonSamples.length ? wonSamples.reduce((a, b) => a + b, 0) / wonSamples.length : null;

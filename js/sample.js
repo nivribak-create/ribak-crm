@@ -6,19 +6,21 @@ import { uid, addDays, isoDay } from './util.js';
 
 const FIRST = ['נועה', 'יובל', 'איתי', 'מאיה', 'עומר', 'שירה', 'דניאל', 'תמר', 'עידו', 'רוני', 'ליאור', 'הילה', 'אורי', 'מיכל', 'נדב', 'ענבר', 'אלון', 'טל', 'גיא', 'שני', 'רועי', 'אביב', 'ניב', 'יעל', 'עמית', 'קרן', 'אסף', 'דנה', 'ברק', 'ליאת'];
 const LAST = ['כהן', 'לוי', 'מזרחי', 'פרץ', 'ביטון', 'אברהם', 'פרידמן', 'דהן', 'אזולאי', 'חדד', 'גבאי', 'שפירא', 'ברק', 'אוחיון', 'מלכה', 'נחום', 'סגל', 'רוזן', 'עמר', 'קליין'];
-const SOURCE_W = [['אינסטגרם', 34], ['פייסבוק', 22], ['גוגל', 14], ['המלצה', 16], ['אתר אינטרנט', 8], ['הגיע למקום', 4], ['אחר', 2]];
+const SOURCE_W = [['אינסטגרם – ממומן', 44], ['אינסטגרם – משפיען', 32], ['המלצה', 10], ['אתר', 6], ['וואטסאפ', 4], ['לא ידוע', 4]];
+const INFLUENCERS = ['@noa_fit', '@yossi_eats', '@tal_trains', '@shira.balance'];
 
-// Chance of making it through each step (new→wa, wa→call, call→fu, fu→trial, trial→sub)
-const PASS = [0.95, 0.70, 0.78, 0.66, 0.62];
+// Chance of making it through each step
+// (new→contacted, contacted→pitched, pitched→trial, trial→delivered, delivered→subscribed)
+const PASS = [0.93, 0.62, 0.48, 0.97, 0.55];
 // Reasons a lead is lost when stuck on each stage
 const LOST_AT = {
-  new:      [['invalid', 5], ['irrelevant', 4], ['call_no_answer', 1]],
-  whatsapp: [['wa_no_reply', 6], ['call_no_answer', 8], ['irrelevant', 1]],
-  call:     [['call_not_int', 6], ['fu_no_answer', 4], ['fit', 5]],
-  followup: [['fu_not_int', 5], ['trial_no_close', 5], ['fit', 3]],
-  trial:    [['trial_no_show', 4], ['trial_cancel', 2], ['sub_no_close', 5], ['fit', 2]],
+  new:       [['invalid', 4], ['irrelevant', 3], ['no_answer', 6], ['out_of_area', 3]],
+  contacted: [['no_answer', 9], ['out_of_area', 3], ['irrelevant', 1]],
+  pitched:   [['price', 7], ['thinking', 6], ['delivery_time', 3], ['food_type', 3], ['no_answer', 3]],
+  trial:     [['no_answer', 3], ['price', 2]],
+  delivered: [['price', 5], ['taste', 3], ['variety', 3], ['no_need', 4], ['no_answer', 3]],
 };
-const NOTES = ['מעוניין באימוני בוקר', 'שאל על מחיר לזוג', 'חבר של מתאמן קיים', 'מחפש אימון כוח', 'רוצה להתחיל אחרי החגים', 'ביקש שנחזור אחה"צ', '', '', ''];
+const NOTES = ['רוצה 5 מנות בשבוע', 'שאל אם יש אופציה בלי גלוטן', 'מתאמן, מחפש חלבון גבוה', 'ביקש שנחזור אחרי 18:00', 'לא אוכל דגים', 'שאל על משלוח לרעננה', 'עובד במשמרות, אין זמן לבשל', '', '', ''];
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -49,7 +51,7 @@ export function generateSample(count = 140, days = 90, seed = 20260911) {
     const events = [{ t: created.toISOString(), type: 'created', stage: 'new' }];
     let stage = 'new', status = 'active', lostReason = null, lostAt = null, attempts = 0, nextAt = null;
     let t = new Date(created);
-    const gaps = [0.3, 1.4, 2.2, 5, 8]; // typical days between steps
+    const gaps = [0.4, 1.2, 1.8, 5, 2.5]; // typical days between steps
 
     for (let step = 0; step < PASS.length; step++) {
       const gap = gaps[step] * (0.4 + r() * 1.4);
@@ -78,7 +80,9 @@ export function generateSample(count = 140, days = 90, seed = 20260911) {
     }
     const notes = pick(r, NOTES);
     leads.push({
-      id: uid() + i.toString(36), name, phone, source, notes,
+      id: uid() + i.toString(36), name, phone, source,
+      influencer: source === 'אינסטגרם – משפיען' ? pick(r, INFLUENCERS) : '',
+      notes,
       createdAt: created.toISOString(), updatedAt: events[events.length - 1].t,
       stage, status, lostReason, lostAt, nextAt, attempts, events,
     });

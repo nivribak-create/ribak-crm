@@ -5,8 +5,8 @@
 // Every mutation goes through a function here so the event timeline stays
 // consistent in both modes.
 
-import { STAGES, stageIndex, nextStage, FINAL_STAGE } from './model.js';
-import { uid, nowIso, isoDay, addDays } from './util.js';
+import { STAGES, stageIndex, nextStage, FINAL_STAGE, LEGACY_STAGES, LEGACY_REASONS, LEGACY_SOURCES, SOURCES, UNKNOWN_SOURCE } from './model.js';
+import { uid, nowIso, isoDay, addDays, normPhone } from './util.js';
 import * as api from './api.js';
 
 const KEY = 'ribak-crm:v1';
@@ -260,23 +260,63 @@ export function setSetting(key, value) {
   commit(state.leads, { ...state.settings, [key]: value }, { settings: true });
 }
 
-// Defensive normalisation for imported / stored data.
+// Defensive normalisation for stored data, and the migration path from the
+// first pipeline (which had a "follow-up" stage and generic sources) to the
+// one built around the real Ribak flow.
 function normalizeLead(raw) {
   const t = raw.createdAt || nowIso();
+  const stage = STAGES.some(s => s.id === raw.stage) ? raw.stage : (LEGACY_STAGES[raw.stage] || 'new');
+  const lostReason = raw.lostReason ? (LEGACY_REASONS[raw.lostReason] || raw.lostReason) : null;
+  const source = SOURCES.includes(raw.source) ? raw.source : (LEGACY_SOURCES[raw.source] || raw.source || UNKNOWN_SOURCE);
   return {
     id: String(raw.id || uid()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || uid(),
     name: String(raw.name || '').trim() || 'ללא שם',
     phone: String(raw.phone || '').trim(),
-    source: raw.source || 'אחר',
+    source,
+    influencer: String(raw.influencer || '').trim(),
+    owner: String(raw.owner || '').trim(),
     notes: String(raw.notes || ''),
     createdAt: t,
     updatedAt: raw.updatedAt || t,
-    stage: STAGES.some(s => s.id === raw.stage) ? raw.stage : 'new',
+    stage,
     status: ['active', 'won', 'lost'].includes(raw.status) ? raw.status : 'active',
-    lostReason: raw.lostReason || null,
+    lostReason,
     lostAt: raw.lostAt || null,
     nextAt: raw.nextAt || null,
     attempts: Number(raw.attempts) || 0,
-    events: Array.isArray(raw.events) && raw.events.length ? raw.events : [{ t, type: 'created', stage: 'new' }],
+    events: (Array.isArray(raw.events) && raw.events.length ? raw.events : [{ t, type: 'created', stage: 'new' }])
+      .map(e => (e.stage && LEGACY_STAGES[e.stage] ? { ...e, stage: LEGACY_STAGES[e.stage] } : e)),
   };
+}
+
+// ---- import ------------------------------------------------------------
+export const findByPhone = phone => {
+  const d = normPhone(phone);
+  return d ? state.leads.find(l => normPhone(l.phone) === d) || null : null;
+};
+
+export const knownInfluencers = () =>
+  [...new Set(state.leads.map(l => l.influencer).filter(Boolean))].sort();
+
+// Build a lead that is already partway down the pipeline, with a timeline
+// that says so. Used by the bulk triage screen; one call per lead so a
+// stopped session keeps everything already sorted.
+export function importLead({ name, phone, source, influencer = '', stage = 'new', lostReason = null, notes = '', createdAt = null }) {
+  const t = createdAt || nowIso();
+  const idx = Math.max(0, stageIndex(stage));
+  const events = [{ t, type: 'imported', stage: 'new' }];
+  for (let i = 1; i <= idx; i++) events.push({ t, type: 'advanced', stage: STAGES[i].id, imported: true });
+  const lost = Boolean(lostReason);
+  if (lost) events.push({ t, type: 'lost', stage: STAGES[idx].id, reason: lostReason, imported: true });
+  const lead = normalizeLead({
+    id: uid(), name, phone, source, influencer, notes,
+    createdAt: t, updatedAt: t,
+    stage: STAGES[idx].id,
+    status: lost ? 'lost' : (STAGES[idx].id === FINAL_STAGE ? 'won' : 'active'),
+    lostReason: lostReason || null,
+    lostAt: lost ? t : null,
+    nextAt: null, attempts: 0, events,
+  });
+  commit([lead, ...state.leads], state.settings, { upsert: [lead] });
+  return lead;
 }
