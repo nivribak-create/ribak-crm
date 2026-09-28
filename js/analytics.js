@@ -3,7 +3,7 @@
 // so "conversion in the last 30 days" means "of leads that came in during
 // the last 30 days, how many closed".
 
-import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES } from './model.js';
+import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf } from './model.js';
 import { dayStart, addDays, daysBetween, pct1 } from './util.js';
 
 export const RANGES = [
@@ -26,17 +26,20 @@ export function filterLeads(leads, { range = 'all', source = '' } = {}) {
 export function computeAnalytics(allLeads, filters = {}) {
   const leads = filterLeads(allLeads, filters);
   const n = leads.length;
-  const won = leads.filter(l => l.status === 'won').length;
+  const sold = leads.filter(everSubscribed).length;      // ever became a subscriber
+  const won = leads.filter(l => l.status === 'won').length;   // still subscribed
+  const churned = leads.filter(l => l.status === 'churned').length;
   const lost = leads.filter(l => l.status === 'lost').length;
-  const active = n - won - lost;
+  const active = leads.filter(l => l.status === 'active').length;
+  const outcomes = OUTCOMES.map(o => ({ ...o, count: leads.filter(l => outcomeOf(l) === o.id).length }));
 
   // ---- funnel ----------------------------------------------------------
   const funnel = STAGES.map((s, i) => {
     const reached = leads.filter(l => stageIndex(l.stage) >= i);
     const advanced = reached.filter(l => stageIndex(l.stage) > i).length;
-    const lostHere = reached.filter(l => l.status === 'lost' && l.stage === s.id);
+    const lostHere = reached.filter(l => (l.status === 'lost' || l.status === 'churned') && l.stage === s.id);
     const activeHere = reached.filter(l => l.status === 'active' && l.stage === s.id).length;
-    const wonHere = reached.filter(l => l.status === 'won' && l.stage === s.id).length;
+    const wonHere = reached.filter(l => everSubscribed(l) && l.stage === s.id).length;
     const reasons = countBy(lostHere, l => l.lostReason)
       .map(([id, count]) => ({ id, label: reasonLabel(id), count }))
       .sort((a, b) => b.count - a.count);
@@ -50,7 +53,7 @@ export function computeAnalytics(allLeads, filters = {}) {
   });
 
   // ---- lost reasons (overall) ----------------------------------------
-  const lostLeads = leads.filter(l => l.status === 'lost');
+  const lostLeads = leads.filter(l => l.status === 'lost' || l.status === 'churned');
   const reasons = countBy(lostLeads, l => l.lostReason)
     .map(([id, count]) => {
       const def = LOST_REASONS.find(r => r.id === id);
@@ -66,11 +69,20 @@ export function computeAnalytics(allLeads, filters = {}) {
   // ---- sources ----------------------------------------------------------
   const sources = SOURCES.map(src => {
     const ls = leads.filter(l => l.source === src);
-    const w = ls.filter(l => l.status === 'won').length;
+    const w = ls.filter(everSubscribed).length;
     const lo = ls.filter(l => l.status === 'lost').length;
     const trial = ls.filter(l => stageIndex(l.stage) >= stageIndex('trial')).length;
     return { source: src, total: ls.length, won: w, lost: lo, active: ls.length - w - lo, trial, conv: pct1(w, ls.length) };
   }).filter(s => s.total > 0).sort((a, b) => b.total - a.total);
+
+  // Per influencer — the question is which collaboration actually produced
+  // subscribers, not which one produced the most messages.
+  const influencers = [...new Set(leads.map(l => l.influencer).filter(Boolean))].map(name => {
+    const ls = leads.filter(l => l.influencer === name);
+    const w = ls.filter(everSubscribed).length;
+    const trial = ls.filter(l => stageIndex(l.stage) >= stageIndex('trial')).length;
+    return { name, total: ls.length, trial, won: w, conv: pct1(w, ls.length) };
+  }).sort((a, b) => b.total - a.total);
 
   // ---- time between stages ---------------------------------------------
   const stageDays = STAGES.slice(0, -1).map((s, i) => {
@@ -85,7 +97,7 @@ export function computeAnalytics(allLeads, filters = {}) {
     const med = samples.length ? median(samples) : null;
     return { from: s, to: next, n: samples.length, avgDays: avg, medianDays: med };
   });
-  const wonSamples = leads.filter(l => l.status === 'won').map(l => {
+  const wonSamples = leads.filter(everSubscribed).map(l => {
     const e = l.events.find(x => !x.imported && x.type === 'advanced' && x.stage === 'subscribed');
     return e ? (new Date(e.t) - new Date(l.createdAt)) / 86400000 : null;
   }).filter(x => x != null);
@@ -107,11 +119,12 @@ export function computeAnalytics(allLeads, filters = {}) {
 
   const trialReached = funnel[stageIndex('trial')].reached;
   return {
-    leads, total: n, won, lost, active,
-    convTotal: pct1(won, n),
-    convTrial: pct1(won, trialReached),
+    leads, total: n, sold, won, churned, lost, active, outcomes,
+    convTotal: pct1(sold, n),
+    convTrial: pct1(sold, trialReached),
+    churnRate: pct1(churned, sold),
     trialReached,
-    funnel, reasons, weekly, sources, stageDays, avgDaysToWin,
+    funnel, reasons, weekly, sources, influencers, stageDays, avgDaysToWin,
     attempts: { total: attemptEvents.length, byStage: attemptsByStage, leads: leadsWithAttempts },
     due,
   };
@@ -128,7 +141,7 @@ function weeklyCohorts(leads, range) {
     const start = addDays(thisWeekStart, -7 * i);
     const end = addDays(start, 7);
     const ls = leads.filter(l => { const d = new Date(l.createdAt); return d >= start && d < end; });
-    const w = ls.filter(l => l.status === 'won').length;
+    const w = ls.filter(everSubscribed).length;
     const lo = ls.filter(l => l.status === 'lost').length;
     buckets.push({ start, end, total: ls.length, won: w, lost: lo, active: ls.length - w - lo });
   }

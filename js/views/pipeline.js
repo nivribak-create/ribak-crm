@@ -16,7 +16,7 @@ function boardHtml(state, today) {
     stage: s,
     leads: leads.filter(l => l.stage === s.id && l.status !== 'lost').sort((a, b) => sortKey(a, today) - sortKey(b, today)),
   }));
-  const lostLeads = leads.filter(l => l.status === 'lost').sort((a, b) => (a.lostAt < b.lostAt ? 1 : -1));
+  const lostLeads = leads.filter(l => l.status === 'lost' || l.status === 'churned').sort((a, b) => (a.lostAt < b.lostAt ? 1 : -1));
   return {
     html: cols.map(c => column(c, today)).join('') + (ui.showLost ? lostColumn(lostLeads) : ''),
     lostCount: lostLeads.length,
@@ -31,7 +31,7 @@ export function render(root, state) {
   root.innerHTML = `
     <div class="toolbar">
       <input class="input input--sm input--search" type="search" placeholder="חיפוש לפי שם או טלפון" value="${esc(ui.q)}" data-q aria-label="חיפוש">
-      <label class="switch"><input type="checkbox" data-showlost ${ui.showLost ? 'checked' : ''}><span>הצג אבודים (<span data-lost-count>${fmtNum(b.lostCount)}</span>)</span></label>
+      <label class="switch"><input type="checkbox" data-showlost ${ui.showLost ? 'checked' : ''}><span>הצג אבודים והפסיקו (<span data-lost-count>${fmtNum(b.lostCount)}</span>)</span></label>
       <span class="toolbar__note muted"><span data-active-count>${fmtNum(b.activeCount)}</span> בטיפול</span>
     </div>
     <div class="board ${ui.showLost ? 'board--with-lost' : ''}">${b.html}</div>`;
@@ -109,13 +109,13 @@ function lostColumn(leads) {
   return `<section class="col col--lost" aria-label="אבודים">
     <header class="col__head">
       <span class="col__dot"></span>
-      <h2 class="col__title">אבודים</h2>
+      <h2 class="col__title">אבדו / הפסיקו</h2>
       <span class="col__count">${fmtNum(leads.length)}</span>
     </header>
     <div class="col__body">
       ${leads.length ? leads.map(l => `<article class="card card--lost" data-id="${l.id}" tabindex="0">
         <div class="card__top"><b class="card__name">${esc(l.name)}</b><span class="card__source">${esc(l.source)}</span></div>
-        <div class="card__row"><span class="tag tag--lost">${esc(reasonLabel(l.lostReason))}</span></div>
+        <div class="card__row"><span class="tag tag--${l.status === 'churned' ? 'churn' : 'lost'}">${l.status === 'churned' ? 'הפסיק מנוי · ' : ''}${esc(reasonLabel(l.lostReason))}</span></div>
         <div class="card__row muted">בשלב ${esc(STAGE_BY_ID[l.stage].short)} · ${relDays(l.lostAt)}</div>
         <div class="card__actions">${actionButtons(l)}</div>
       </article>`).join('') : `<div class="col__empty">אין לידים אבודים</div>`}

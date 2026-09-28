@@ -7,12 +7,14 @@ import * as dashboard from './views/dashboard.js';
 import * as pipeline from './views/pipeline.js';
 import * as leads from './views/leads.js';
 import * as triage from './views/triage.js';
+import * as influencers from './views/influencers.js';
 
 const VIEWS = {
   dashboard: { title: 'לוח בקרה', render: dashboard.render },
   pipeline:  { title: 'פייפליין',  render: pipeline.render },
   leads:     { title: 'לידים',     render: leads.render },
   triage:    { title: 'מיון מהיר', render: triage.render },
+  influencers: { title: 'משפיענים', render: influencers.render },
 };
 
 const main = document.getElementById('view');
@@ -167,8 +169,13 @@ async function loadSample() {
     const ok = await confirmDialog({ title: 'טעינת נתוני דוגמה', text: `יש כבר ${fmtNum(state.leads.length)} לידים במערכת. נתוני הדוגמה יחליפו אותם${state.mode === 'remote' ? ' – אצל כולם' : ''}. להמשיך?`, okLabel: 'החלף בדוגמה', danger: true });
     if (!ok) return;
   }
-  store.replaceAll(generateSample(), { sample: true });
-  toast('נטענו נתוני דוגמה', 'good');
+  try {
+    store.replaceAll(generateSample(), { sample: true });
+    toast('נטענו נתוני דוגמה', 'good');
+  } catch (e) {
+    console.error(e);
+    toast(`לא הצלחתי ליצור נתוני דוגמה: ${e.message}`, 'warn');
+  }
 }
 
 function openDataMenu() {

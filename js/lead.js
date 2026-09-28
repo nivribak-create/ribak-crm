@@ -78,6 +78,38 @@ export function openLostDialog(lead) {
   });
 }
 
+export function openChurnDialog(lead) {
+  const relevant = LOST_REASONS.filter(r => r.from.includes('subscribed'));
+  const radio = r => `
+    <label class="choice">
+      <input type="radio" name="reason" value="${r.id}">
+      <span>${esc(r.label)}</span>
+    </label>`;
+  const body = `
+    <form class="form" id="churn-form">
+      <p class="modal__text">${esc(lead.name)} היה מנוי פעיל. למה הוא הפסיק?</p>
+      <div class="choices">${relevant.map(radio).join('')}</div>
+      <details class="more">
+        <summary>סיבות נוספות</summary>
+        <div class="choices">${LOST_REASONS.filter(r => !r.from.includes('subscribed')).map(radio).join('')}</div>
+      </details>
+      ${field('הערה (לא חובה)', `<input class="input" name="note" placeholder="למשל: אמר שיחזור אחרי החגים">`)}
+    </form>`;
+  const m = openModal({
+    title: 'הפסקת מנוי',
+    body,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--danger" type="submit" form="churn-form">סמן שהמנוי הופסק</button>`,
+  });
+  m.el.querySelector('#churn-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const d = formData(e.target);
+    if (!d.reason) { toast('בחר סיבה', 'warn'); return; }
+    store.markChurned(lead.id, d.reason, d.note);
+    toast(`${lead.name} כבר לא מנוי – ${reasonLabel(d.reason)}`);
+    m.close();
+  });
+}
+
 // ---- shared actions -----------------------------------------------------
 export function advance(lead) {
   const next = nextStage(lead.stage);
@@ -93,6 +125,10 @@ export function restore(lead) {
   store.restoreLead(lead.id);
   toast(`${lead.name} חזר לפייפליין`, 'good');
 }
+export function subscribeNow(lead) {
+  store.advanceLead(lead.id, FINAL_STAGE);
+  toast(`🎉 ${lead.name} סגר מנוי!`, 'good');
+}
 export async function remove(lead) {
   const ok = await confirmDialog({ title: 'מחיקת ליד', text: `למחוק את ${lead.name} לצמיתות? הפעולה לא ניתנת לביטול.`, okLabel: 'מחיקה', danger: true });
   if (ok) { store.deleteLead(lead.id); toast('הליד נמחק'); closeDrawer(); }
@@ -100,16 +136,22 @@ export async function remove(lead) {
 
 // Buttons that appear on cards and in the drawer.
 export function actionButtons(lead, { compact = false } = {}) {
-  if (lead.status === 'lost') {
+  if (lead.status === 'lost' || lead.status === 'churned') {
     return `<button class="btn btn--sm" data-act="restore" data-id="${lead.id}">↩ החזר לפייפליין</button>`;
   }
   if (lead.status === 'won') {
-    return `<span class="won-tag">✓ מנוי פעיל</span>`;
+    return `
+      <span class="won-tag">✓ מנוי פעיל</span>
+      <button class="btn btn--sm btn--ghost btn--lost" data-act="churn" data-id="${lead.id}" title="המנוי הופסק">ביטל מנוי</button>`;
   }
   const next = nextStage(lead.stage);
-  const canAttempt = ['whatsapp', 'call', 'followup', 'new'].includes(lead.stage);
+  const canAttempt = ['new', 'contacted', 'pitched', 'delivered', 'repeat'].includes(lead.stage);
+  // From the delivery onwards there are two good outcomes — another single
+  // week, or the subscription itself — so both are one click away.
+  const skipToSub = ['delivered', 'repeat'].includes(lead.stage) && next.id !== FINAL_STAGE;
   return `
     <button class="btn btn--sm btn--primary" data-act="advance" data-id="${lead.id}" title="${esc(next.label)}">✓ ${esc(next.action)}</button>
+    ${skipToSub ? `<button class="btn btn--sm" data-act="subscribe" data-id="${lead.id}" title="דילוג ישר למנוי">סגר מנוי</button>` : ''}
     ${canAttempt ? `<button class="btn btn--sm btn--ghost" data-act="attempt" data-id="${lead.id}" title="נרשם ניסיון, ננסה שוב מחר">לא ענה</button>` : ''}
     <button class="btn btn--sm btn--ghost btn--lost" data-act="lost" data-id="${lead.id}" title="סימון כאבוד">✕${compact ? '' : ' אבד'}</button>`;
 }
@@ -125,6 +167,8 @@ export function handleAction(e) {
     case 'advance': advance(lead); break;
     case 'attempt': attempt(lead); break;
     case 'lost': openLostDialog(lead); break;
+    case 'churn': openChurnDialog(lead); break;
+    case 'subscribe': subscribeNow(lead); break;
     case 'restore': restore(lead); break;
     case 'edit': openLeadForm(lead); break;
     case 'delete': remove(lead); break;
@@ -187,7 +231,9 @@ function renderDrawer() {
   const inStage = stageSince ? daysBetween(stageSince.t, new Date()) : 0;
 
   const stepper = STAGES.map((s, i) => {
-    const cls = i < idx ? 'is-done' : i === idx ? (lead.status === 'lost' ? 'is-lost' : lead.status === 'won' ? 'is-won' : 'is-current') : '';
+    const cls = i < idx ? 'is-done'
+      : i === idx ? (lead.status === 'lost' || lead.status === 'churned' ? 'is-lost' : lead.status === 'won' ? 'is-won' : 'is-current')
+      : '';
     return `<li class="stepper__step ${cls}"><span class="stepper__dot"></span><span class="stepper__label">${esc(s.short)}</span></li>`;
   }).join('');
 
@@ -195,6 +241,7 @@ function renderDrawer() {
     let text = EVENT_LABELS[ev.type] || ev.type;
     if (ev.type === 'advanced') text = STAGE_BY_ID[ev.stage]?.done || text;
     if (ev.type === 'lost') text = `סומן כאבוד · ${reasonLabel(ev.reason)}`;
+    if (ev.type === 'churned') text = `המנוי הופסק · ${reasonLabel(ev.reason)}`;
     if (ev.type === 'attempt') text = `ניסיון ${ev.channel === 'whatsapp' ? 'בוואטסאפ' : 'טלפוני'} ללא מענה`;
     if (ev.type === 'note') text = ev.text;
     return `<li class="tl__item tl__item--${ev.type}">
@@ -203,7 +250,8 @@ function renderDrawer() {
     </li>`;
   }).join('');
 
-  const statusTag = lead.status === 'won' ? `<span class="tag tag--won">סגר מנוי</span>`
+  const statusTag = lead.status === 'won' ? `<span class="tag tag--won">מנוי פעיל</span>`
+    : lead.status === 'churned' ? `<span class="tag tag--churn">היה מנוי והפסיק · ${esc(reasonLabel(lead.lostReason))}</span>`
     : lead.status === 'lost' ? `<span class="tag tag--lost">אבד · ${esc(reasonLabel(lead.lostReason))}</span>`
     : `<span class="tag tag--active">${esc(STAGE_BY_ID[lead.stage].label)}</span>`;
 

@@ -179,6 +179,7 @@ function renderPlay(root) {
                   <kbd>${i + 1}</kbd><span>${esc(s.label)}</span>
                 </button>`).join('')}
               <button class="stagebtn stagebtn--lost" data-lost><kbd>0</kbd><span>אבד</span></button>
+              <button class="stagebtn stagebtn--churn" data-churn><kbd>9</kbd><span>היה מנוי והפסיק</span></button>
             </div>
           </div>
 
@@ -221,18 +222,42 @@ function renderPlay(root) {
   stages.addEventListener('click', e => {
     const s = e.target.closest('[data-stage]');
     if (s) { commit(s.dataset.stage, null, card); return; }
-    if (e.target.closest('[data-lost]')) {
-      reasons.classList.remove('is-hidden');
-      stages.classList.add('is-dim');
-    }
+    if (e.target.closest('[data-lost]')) { openLost(); return; }
+    if (e.target.closest('[data-churn]')) { openChurn(); }
   });
 
   let lostStage = null;
+  let churnMode = false;
   const why = root.querySelector('#lost-why');
   const whyChips = root.querySelector('#lost-reasons');
+  const stagePicker = root.querySelector('#lost-stages');
+  const lostTitle = reasons.querySelector('.tcard__label');
+
+  const openLost = () => {
+    churnMode = false;
+    lostTitle.textContent = 'עד איפה הוא הגיע?';
+    stagePicker.classList.remove('is-hidden');
+    why.classList.add('is-hidden');
+    reasons.classList.remove('is-hidden');
+    stages.classList.add('is-dim');
+  };
+  // An ex-subscriber reached the end of the pipeline — only the reason is
+  // still open, so the stage picker is skipped entirely.
+  const openChurn = () => {
+    churnMode = true;
+    lostStage = 'subscribed';
+    lostTitle.textContent = 'למה הוא הפסיק את המנוי?';
+    stagePicker.classList.add('is-hidden');
+    whyChips.innerHTML = LOST_REASONS.filter(r => r.from.includes('subscribed') || !r.from.length)
+      .map(r => `<button class="chip chip--lost" data-reason="${r.id}">${esc(r.label)}</button>`).join('');
+    why.classList.remove('is-hidden');
+    reasons.classList.remove('is-hidden');
+    stages.classList.add('is-dim');
+  };
   const closeLost = () => {
     reasons.classList.add('is-hidden'); stages.classList.remove('is-dim');
-    why.classList.add('is-hidden'); lostStage = null;
+    why.classList.add('is-hidden'); stagePicker.classList.remove('is-hidden');
+    lostStage = null; churnMode = false;
     root.querySelectorAll('[data-lost-stage]').forEach(x => x.classList.remove('is-on'));
   };
   reasons.addEventListener('click', e => {
@@ -249,7 +274,7 @@ function renderPlay(root) {
     }
 
     const r = e.target.closest('[data-reason]');
-    if (r && lostStage) commit(lostStage, r.dataset.reason, card);
+    if (r && lostStage) commit(lostStage, r.dataset.reason, card, churnMode);
   });
 
   root.querySelector('#undo').addEventListener('click', undo);
@@ -262,7 +287,8 @@ function renderPlay(root) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const n = Number(e.key);
     if (n >= 1 && n <= STAGES.length) { e.preventDefault(); commit(STAGES[n - 1].id, null, card); return; }
-    if (e.key === '0') { e.preventDefault(); reasons.classList.remove('is-hidden'); stages.classList.add('is-dim'); return; }
+    if (e.key === '0') { e.preventDefault(); openLost(); return; }
+    if (e.key === '9') { e.preventDefault(); openChurn(); return; }
     if (e.key === 'Escape' && !reasons.classList.contains('is-hidden')) { e.preventDefault(); closeLost(); return; }
     if (e.key.toLowerCase() === 's') { e.preventDefault(); skip(card); return; }
     if (e.key.toLowerCase() === 'u' || e.key === 'Backspace') { e.preventDefault(); undo(); }
@@ -281,7 +307,7 @@ function fly(card, direction, after) {
   setTimeout(after, 170);
 }
 
-function commit(stage, lostReason, card) {
+function commit(stage, lostReason, card, churned = false) {
   const row = ui.queue[ui.index];
   if (!row) return;
   const name = currentName();
@@ -292,6 +318,7 @@ function commit(stage, lostReason, card) {
     influencer: ui.source === INFLUENCER_SOURCE ? ui.influencer : '',
     stage,
     lostReason,
+    churned,
   });
   ui.history.push({ row, leadId: lead.id });
   ui.streak = lostReason ? 0 : ui.streak + 1;

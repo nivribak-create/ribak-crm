@@ -1,7 +1,7 @@
 // Example data so the app opens in a working state. Plainly marked as
 // examples in the UI; replace it with real leads whenever you like.
 
-import { STAGES, LOST_REASONS, SOURCES } from './model.js';
+import { STAGES, stageIndex } from './model.js';
 import { uid, addDays, isoDay } from './util.js';
 
 const FIRST = ['נועה', 'יובל', 'איתי', 'מאיה', 'עומר', 'שירה', 'דניאל', 'תמר', 'עידו', 'רוני', 'ליאור', 'הילה', 'אורי', 'מיכל', 'נדב', 'ענבר', 'אלון', 'טל', 'גיא', 'שני', 'רועי', 'אביב', 'ניב', 'יעל', 'עמית', 'קרן', 'אסף', 'דנה', 'ברק', 'ליאת'];
@@ -9,9 +9,12 @@ const LAST = ['כהן', 'לוי', 'מזרחי', 'פרץ', 'ביטון', 'אבר�
 const SOURCE_W = [['אינסטגרם – ממומן', 44], ['אינסטגרם – משפיען', 32], ['המלצה', 10], ['אתר', 6], ['וואטסאפ', 4], ['לא ידוע', 4]];
 const INFLUENCERS = ['@noa_fit', '@yossi_eats', '@tal_trains', '@shira.balance'];
 
-// Chance of making it through each step
-// (new→contacted, contacted→pitched, pitched→trial, trial→delivered, delivered→subscribed)
-const PASS = [0.93, 0.62, 0.48, 0.97, 0.55];
+// Chance of making it out of each stage, keyed by the stage itself. After
+// the first delivery the customer either takes the subscription straight
+// away or orders one more single week first.
+const PASS = { new: 0.93, contacted: 0.62, pitched: 0.48, trial: 0.97, delivered: 0.62, repeat: 0.55 };
+const GAP_DAYS = { new: 0.4, contacted: 1.2, pitched: 1.8, trial: 5, delivered: 2.5, repeat: 7 };
+const STRAIGHT_TO_SUB = 0.6;  // of those who continue after the first delivery
 // Reasons a lead is lost when stuck on each stage
 const LOST_AT = {
   new:       [['invalid', 4], ['irrelevant', 3], ['no_answer', 6], ['out_of_area', 3]],
@@ -19,6 +22,7 @@ const LOST_AT = {
   pitched:   [['price', 7], ['thinking', 6], ['delivery_time', 3], ['food_type', 3], ['no_answer', 3]],
   trial:     [['no_answer', 3], ['price', 2]],
   delivered: [['price', 5], ['taste', 3], ['variety', 3], ['no_need', 4], ['no_answer', 3]],
+  repeat:    [['price', 4], ['variety', 4], ['no_need', 3], ['paused', 2], ['no_answer', 2]],
 };
 const NOTES = ['רוצה 5 מנות בשבוע', 'שאל אם יש אופציה בלי גלוטן', 'מתאמן, מחפש חלבון גבוה', 'ביקש שנחזור אחרי 18:00', 'לא אוכל דגים', 'שאל על משלוח לרעננה', 'עובד במשמרות, אין זמן לבשל', '', '', ''];
 
@@ -27,6 +31,7 @@ function rng(seed) {
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
 }
 const pickW = (r, items) => {
+  if (!items || !items.length) return 'other';
   const total = items.reduce((a, [, w]) => a + w, 0);
   let x = r() * total;
   for (const [v, w] of items) { x -= w; if (x <= 0) return v; }
@@ -51,25 +56,35 @@ export function generateSample(count = 140, days = 90, seed = 20260911) {
     const events = [{ t: created.toISOString(), type: 'created', stage: 'new' }];
     let stage = 'new', status = 'active', lostReason = null, lostAt = null, attempts = 0, nextAt = null;
     let t = new Date(created);
-    const gaps = [0.4, 1.2, 1.8, 5, 2.5]; // typical days between steps
-
-    for (let step = 0; step < PASS.length; step++) {
-      const gap = gaps[step] * (0.4 + r() * 1.4);
+    for (let step = 0; step < STAGES.length - 1; step++) {
+      const gap = GAP_DAYS[stage] * (0.4 + r() * 1.4);
       const tNext = new Date(t.getTime() + gap * 86400000);
       if (tNext > now) { // still in progress on this stage
         if (r() < 0.5) nextAt = isoDay(addDays(now, Math.floor(r() * 4) - 1));
         if (r() < 0.35) { attempts = 1 + Math.floor(r() * 2); for (let a = 0; a < attempts; a++) events.push({ t: new Date(t.getTime() + (a + 1) * 0.6 * 86400000).toISOString(), type: 'attempt', stage, channel: 'call' }); }
         break;
       }
-      // occasional unanswered attempt before a successful call/follow-up
-      if ((step === 1 || step === 2) && r() < 0.3) {
+      // occasional unanswered attempt before a call connects
+      if ((stage === 'contacted' || stage === 'pitched') && r() < 0.3) {
         events.push({ t: new Date(t.getTime() + gap * 0.5 * 86400000).toISOString(), type: 'attempt', stage, channel: 'call' });
       }
-      if (r() < PASS[step]) {
-        stage = STAGES[step + 1].id;
+      if (r() < PASS[stage]) {
+        stage = stage === 'delivered' && r() < STRAIGHT_TO_SUB ? 'subscribed' : STAGES[stageIndex(stage) + 1].id;
         t = tNext;
         events.push({ t: t.toISOString(), type: 'advanced', stage });
-        if (stage === 'subscribed') { status = 'won'; break; }
+        if (stage === 'subscribed') {
+          status = 'won';
+          // some subscriptions stop after a few weeks
+          const weeks = 2 + Math.floor(r() * 10);
+          const churnT = new Date(t.getTime() + weeks * 7 * 86400000);
+          if (r() < 0.28 && churnT < now) {
+            status = 'churned';
+            lostReason = pickW(r, [['price', 5], ['variety', 4], ['no_need', 3], ['taste', 2], ['paused', 3]]);
+            lostAt = churnT.toISOString();
+            events.push({ t: lostAt, type: 'churned', stage, reason: lostReason });
+          }
+          break;
+        }
       } else {
         const lostT = new Date(t.getTime() + gap * 1.6 * 86400000);
         if (lostT > now) { if (r() < 0.6) nextAt = isoDay(addDays(now, Math.floor(r() * 3) - 1)); break; }

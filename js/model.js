@@ -11,6 +11,7 @@ export const STAGES = [
   { id: 'pitched',    label: 'בוצעה שיחת מכירה',     short: 'שיחת מכירה', done: 'בוצעה שיחת מכירה', action: 'ביצעתי שיחת מכירה' },
   { id: 'trial',      label: 'סגר שבוע ניסיון',      short: 'ניסיון',   done: 'נסגר שבוע ניסיון',   action: 'סגר שבוע ניסיון' },
   { id: 'delivered',  label: 'קיבל את המשלוח',       short: 'קיבל אוכל', done: 'קיבל את המשלוח',    action: 'קיבל את המשלוח' },
+  { id: 'repeat',     label: 'הזמין שבוע נוסף',      short: 'שבוע נוסף', done: 'הזמין שבוע נוסף',   action: 'הזמין שבוע נוסף' },
   { id: 'subscribed', label: 'מנוי פעיל',            short: 'מנוי',     done: 'נסגר מנוי',          action: 'סגר מנוי' },
 ];
 
@@ -28,17 +29,18 @@ export const LEGACY_STAGES = { whatsapp: 'contacted', call: 'pitched', followup:
 // can be standing on when the reason applies, so the lost dialog shows the
 // relevant ones first. The wording comes from what customers actually say.
 export const LOST_REASONS = [
-  { id: 'no_answer',     label: 'לא ענה אחרי כמה ניסיונות',      from: ['new', 'contacted', 'pitched', 'trial', 'delivered'] },
+  { id: 'no_answer',     label: 'לא ענה אחרי כמה ניסיונות',      from: ['new', 'contacted', 'pitched', 'trial', 'delivered', 'repeat'] },
   { id: 'invalid',       label: 'מספר לא תקין',                  from: ['new', 'contacted'] },
   { id: 'irrelevant',    label: 'לא רלוונטי / ליד כפול',         from: ['new', 'contacted'] },
   { id: 'out_of_area',   label: 'מחוץ לאזור החלוקה',             from: ['new', 'contacted', 'pitched'] },
-  { id: 'price',         label: 'יקר לי',                        from: ['pitched', 'delivered'] },
+  { id: 'price',         label: 'יקר לי',                        from: ['pitched', 'delivered', 'repeat', 'subscribed'] },
   { id: 'thinking',      label: 'אמר שיחשוב ולא חזר',            from: ['pitched'] },
   { id: 'delivery_time', label: 'זמני המשלוח לא מתאימים',        from: ['pitched'] },
   { id: 'food_type',     label: 'סוג האוכל לא מתאים לו',         from: ['pitched'] },
-  { id: 'taste',         label: 'לא אהב את הטעם',                from: ['delivered'] },
-  { id: 'variety',       label: 'מגוון קטן מדי',                 from: ['delivered'] },
-  { id: 'no_need',       label: 'אין לו צורך',                   from: ['delivered'] },
+  { id: 'taste',         label: 'לא אהב את הטעם',                from: ['delivered', 'repeat', 'subscribed'] },
+  { id: 'variety',       label: 'מגוון קטן מדי',                 from: ['delivered', 'repeat', 'subscribed'] },
+  { id: 'no_need',       label: 'אין לו צורך',                   from: ['delivered', 'repeat', 'subscribed'] },
+  { id: 'paused',        label: 'הפסקה זמנית / חופשה',           from: ['repeat', 'subscribed'] },
   { id: 'other',         label: 'סיבה אחרת',                     from: [] },
 ];
 
@@ -78,16 +80,50 @@ export const LEGACY_SOURCES = {
 };
 
 export const STATUS = {
-  active: { id: 'active', label: 'בטיפול' },
-  won:    { id: 'won',    label: 'מנוי פעיל' },
-  lost:   { id: 'lost',   label: 'אבד' },
+  active:  { id: 'active',  label: 'בטיפול' },
+  won:     { id: 'won',     label: 'מנוי פעיל' },
+  churned: { id: 'churned', label: 'היה מנוי והפסיק' },
+  lost:    { id: 'lost',    label: 'אבד' },
 };
+export const STATUSES = Object.keys(STATUS);
+
+// A lead that reached "subscribed" was sold successfully even if the
+// subscription later stopped — selling and retention are different
+// questions, and the funnel must not confuse them.
+export const everSubscribed = l => l.status === 'won' || l.status === 'churned';
+
+// The outcome groups the pipeline can't express on its own: they cut across
+// stage and status to answer "what actually became of this customer".
+export const OUTCOMES = [
+  { id: 'open',        label: 'עדיין בטיפול',              test: l => l.status === 'active' },
+  { id: 'subscriber',  label: 'מנוי פעיל',                 test: l => l.status === 'won' },
+  { id: 'churned',     label: 'היה מנוי והפסיק',           test: l => l.status === 'churned' },
+  { id: 'repeat_only', label: 'הזמין שוב אבל בלי מנוי',    test: l => l.stage === 'repeat' && l.status === 'lost' },
+  { id: 'trial_only',  label: 'ניסה שבוע ולא המשיך',       test: l => ['trial', 'delivered'].includes(l.stage) && l.status === 'lost' },
+  { id: 'never_paid',  label: 'אבד לפני שבוע הניסיון',     test: l => ['new', 'contacted', 'pitched'].includes(l.stage) && l.status === 'lost' },
+];
+export const OUTCOME_BY_ID = Object.fromEntries(OUTCOMES.map(o => [o.id, o]));
+export const outcomeOf = l => OUTCOMES.find(o => o.test(l))?.id || 'open';
+
+// Influencer partnerships run their own little pipeline, separate from the
+// customer one: who we want to work with, who we already approached, and
+// who is actually sending people.
+export const INFLUENCER_STATUSES = [
+  { id: 'wishlist', label: 'רוצה לפנות',        short: 'רוצה לפנות' },
+  { id: 'reached',  label: 'פניתי, אין תשובה',  short: 'פניתי' },
+  { id: 'talking',  label: 'בשיחות',            short: 'בשיחות' },
+  { id: 'active',   label: 'שיתוף פעולה פעיל',  short: 'פעיל' },
+  { id: 'done',     label: 'הסתיים',            short: 'הסתיים' },
+  { id: 'rejected', label: 'לא יצא לפועל',      short: 'לא יצא' },
+];
+export const INFLUENCER_STATUS_BY_ID = Object.fromEntries(INFLUENCER_STATUSES.map(s => [s.id, s]));
 
 export const EVENT_LABELS = {
   created:  'ליד נכנס למערכת',
   advanced: 'התקדם לשלב',
   lost:     'סומן כאבוד',
   restored: 'הוחזר לפייפליין',
+  churned:  'המנוי הופסק',
   attempt:  'ניסיון ללא מענה',
   note:     'הערה',
   edited:   'פרטים עודכנו',

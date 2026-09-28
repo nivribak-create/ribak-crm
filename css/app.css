@@ -726,6 +726,50 @@ kbd {
   .deck__ghost { display: none; }
 }
 
+
+/* ==========================================================================
+   Outcomes, churn and influencers
+   ========================================================================== */
+.tag--churn { background: var(--warn-soft); color: var(--warn-soft-ink); }
+
+.outcomes { display: flex; flex-direction: column; gap: 4px; }
+.outcome { display: grid; grid-template-columns: minmax(150px, 1.1fr) 2fr 92px; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 8px; color: var(--ink); }
+.outcome:hover { background: var(--surface-2); text-decoration: none; }
+.outcome__label { font-size: 14px; }
+.outcome__track { height: 14px; background: var(--surface-3); border-radius: 4px; overflow: hidden; }
+.outcome__fill { display: block; height: 100%; border-radius: 4px; background: var(--muted); transition: width .4s cubic-bezier(.2,.7,.2,1); }
+.outcome--won .outcome__fill { background: var(--f5); }
+.outcome--active .outcome__fill { background: var(--f2); }
+.outcome--warn .outcome__fill { background: var(--warn); }
+.outcome--churn .outcome__fill { background: var(--warn); opacity: .75; }
+.outcome--lost .outcome__fill { background: var(--lost); }
+.outcome__value { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: end; }
+.outcome__value small { color: var(--muted); font-weight: 400; margin-inline-start: 5px; }
+
+.stagebtn--churn { --c: var(--warn); grid-column: 1 / -1; color: var(--warn-soft-ink); }
+.stagebtn--churn:hover { background: var(--warn-soft); }
+
+.board--infl { grid-auto-columns: minmax(230px, 1fr); min-height: 0; }
+.col--infl { --c: var(--muted); }
+.col--wishlist { --c: var(--f0); }
+.col--reached  { --c: var(--f1); }
+.col--talking  { --c: var(--f3); }
+.col--active   { --c: var(--f5); }
+.col--done     { --c: var(--muted); }
+.col--rejected { --c: var(--lost); }
+.icard__stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px 0 2px; border-top: 1px solid var(--line); }
+.icard__stats > div { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.icard__stats b { font-family: var(--font-figures); font-size: 20px; line-height: 1; }
+.icard__stats span { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+
+@media (max-width: 700px) {
+  .outcome { grid-template-columns: 1fr auto; grid-template-rows: auto auto; row-gap: 4px; }
+  .outcome__label { grid-column: 1; grid-row: 1; }
+  .outcome__value { grid-column: 2; grid-row: 1; }
+  .outcome__track { grid-column: 1 / -1; grid-row: 2; }
+  .board--infl { grid-auto-columns: 86vw; }
+}
+
 /* ==========================================================================
    Responsive
    ========================================================================== */

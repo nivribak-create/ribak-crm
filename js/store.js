@@ -5,7 +5,7 @@
 // Every mutation goes through a function here so the event timeline stays
 // consistent in both modes.
 
-import { STAGES, stageIndex, nextStage, FINAL_STAGE, LEGACY_STAGES, LEGACY_REASONS, LEGACY_SOURCES, SOURCES, UNKNOWN_SOURCE } from './model.js';
+import { STAGES, stageIndex, nextStage, FINAL_STAGE, LEGACY_STAGES, LEGACY_REASONS, LEGACY_SOURCES, SOURCES, UNKNOWN_SOURCE, STATUSES } from './model.js';
 import { uid, nowIso, isoDay, addDays, normPhone } from './util.js';
 import * as api from './api.js';
 
@@ -225,6 +225,17 @@ export function markLost(id, reasonId, note = '') {
   });
 }
 
+export function markChurned(id, reasonId, note = '') {
+  patchLead(id, l => {
+    const t = nowIso();
+    l.status = 'churned';
+    l.lostReason = reasonId;
+    l.lostAt = t;
+    l.nextAt = null;
+    l.events.push({ t, type: 'churned', stage: l.stage, reason: reasonId, text: note.trim() || undefined });
+  });
+}
+
 export function restoreLead(id) {
   patchLead(id, l => {
     l.status = l.stage === FINAL_STAGE ? 'won' : 'active';
@@ -256,6 +267,38 @@ export function clearAll() {
   commit([], { ...state.settings, sample: false }, { replace: true, settings: true });
 }
 
+// ---- influencer partnerships -------------------------------------------
+export const getInfluencers = () => (Array.isArray(state.settings.influencers) ? state.settings.influencers : []);
+
+export function saveInfluencer(inf) {
+  const list = getInfluencers();
+  const t = nowIso();
+  const clean = {
+    id: inf.id || uid(),
+    handle: String(inf.handle || '').trim().replace(/^@/, ''),
+    name: String(inf.name || '').trim(),
+    status: inf.status || 'wishlist',
+    followers: String(inf.followers || '').trim(),
+    notes: String(inf.notes || '').trim(),
+    createdAt: inf.createdAt || t,
+    updatedAt: t,
+  };
+  if (!clean.handle) return null;
+  const i = list.findIndex(x => x.id === clean.id);
+  const next = i >= 0 ? list.map(x => (x.id === clean.id ? clean : x)) : [clean, ...list];
+  commit(state.leads, { ...state.settings, influencers: next }, { settings: true });
+  return clean;
+}
+
+export function setInfluencerStatus(id, status) {
+  const next = getInfluencers().map(x => (x.id === id ? { ...x, status, updatedAt: nowIso() } : x));
+  commit(state.leads, { ...state.settings, influencers: next }, { settings: true });
+}
+
+export function deleteInfluencer(id) {
+  commit(state.leads, { ...state.settings, influencers: getInfluencers().filter(x => x.id !== id) }, { settings: true });
+}
+
 export function setSetting(key, value) {
   commit(state.leads, { ...state.settings, [key]: value }, { settings: true });
 }
@@ -279,7 +322,7 @@ function normalizeLead(raw) {
     createdAt: t,
     updatedAt: raw.updatedAt || t,
     stage,
-    status: ['active', 'won', 'lost'].includes(raw.status) ? raw.status : 'active',
+    status: STATUSES.includes(raw.status) ? raw.status : 'active',
     lostReason,
     lostAt: raw.lostAt || null,
     nextAt: raw.nextAt || null,
@@ -301,20 +344,23 @@ export const knownInfluencers = () =>
 // Build a lead that is already partway down the pipeline, with a timeline
 // that says so. Used by the bulk triage screen; one call per lead so a
 // stopped session keeps everything already sorted.
-export function importLead({ name, phone, source, influencer = '', stage = 'new', lostReason = null, notes = '', createdAt = null }) {
+export function importLead({ name, phone, source, influencer = '', stage = 'new', lostReason = null, churned = false, notes = '', createdAt = null }) {
   const t = createdAt || nowIso();
   const idx = Math.max(0, stageIndex(stage));
   const events = [{ t, type: 'imported', stage: 'new' }];
   for (let i = 1; i <= idx; i++) events.push({ t, type: 'advanced', stage: STAGES[i].id, imported: true });
-  const lost = Boolean(lostReason);
-  if (lost) events.push({ t, type: 'lost', stage: STAGES[idx].id, reason: lostReason, imported: true });
+  const ended = Boolean(lostReason) || churned;
+  const status = churned ? 'churned'
+    : lostReason ? 'lost'
+    : (STAGES[idx].id === FINAL_STAGE ? 'won' : 'active');
+  if (ended) events.push({ t, type: churned ? 'churned' : 'lost', stage: STAGES[idx].id, reason: lostReason || undefined, imported: true });
   const lead = normalizeLead({
     id: uid(), name, phone, source, influencer, notes,
     createdAt: t, updatedAt: t,
     stage: STAGES[idx].id,
-    status: lost ? 'lost' : (STAGES[idx].id === FINAL_STAGE ? 'won' : 'active'),
+    status,
     lostReason: lostReason || null,
-    lostAt: lost ? t : null,
+    lostAt: ended ? t : null,
     nextAt: null, attempts: 0, events,
   });
   commit([lead, ...state.leads], state.settings, { upsert: [lead] });

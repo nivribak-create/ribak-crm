@@ -1,4 +1,4 @@
-import { STAGES, STAGE_BY_ID, SOURCES, stageIndex } from '../model.js';
+import { STAGES, STAGE_BY_ID, SOURCES, stageIndex, OUTCOMES } from '../model.js';
 import { computeAnalytics, RANGES } from '../analytics.js';
 import { funnelRows, hbars, stackedColumns, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink } from '../util.js';
@@ -29,10 +29,10 @@ export function render(root, state) {
 
     <section class="kpis">
       ${kpi('לידים נכנסו', fmtNum(a.total), rangeNote())}
-      ${kpi('סגרו מנוי', fmtNum(a.won), a.total ? `${a.convTotal}% מכלל הלידים` : '', 'won')}
+      ${kpi('מנויים פעילים', fmtNum(a.won), a.churned ? `${fmtNum(a.churned)} הפסיקו מאז` : a.total ? `${a.convTotal}% מכלל הלידים` : '', 'won')}
       ${kpi('המרה כוללת', `${a.convTotal}%`, 'ליד חדש ← מנוי')}
-      ${kpi('ניסיון ← מנוי', `${a.convTrial}%`, a.trialReached ? `${fmtNum(a.won)} מתוך ${fmtNum(a.trialReached)} שסגרו ניסיון` : 'עדיין אין שבועות ניסיון')}
-      ${kpi('בטיפול עכשיו', fmtNum(a.active), a.lost ? `${fmtNum(a.lost)} אבדו` : '', 'active')}
+      ${kpi('ניסיון ← מנוי', `${a.convTrial}%`, a.trialReached ? `${fmtNum(a.sold)} מתוך ${fmtNum(a.trialReached)} שקיבלו אוכל` : 'עדיין אין שבועות ניסיון')}
+      ${kpi('נטישת מנויים', a.sold ? `${a.churnRate}%` : '—', a.sold ? `${fmtNum(a.churned)} מתוך ${fmtNum(a.sold)} שסגרו מנוי` : 'אין עדיין מנויים', a.churnRate >= 25 ? 'alert' : '')}
       ${kpi('פולואפים להיום', fmtNum(a.due.today + a.due.overdue), a.due.overdue ? `${fmtNum(a.due.overdue)} באיחור` : a.due.upcoming ? `${fmtNum(a.due.upcoming)} בהמשך השבוע` : '', a.due.overdue ? 'alert' : '')}
     </section>
 
@@ -50,6 +50,13 @@ export function render(root, state) {
         </ul>
       </header>
       <div class="funnel">${funnelRows(a.funnel, a.total)}</div>
+    </section>
+
+    <section class="panel">
+      <header class="panel__head">
+        <div><h2>מה יצא מהלידים</h2><p class="muted">כל ליד בטווח, לפי מה שקרה איתו בסוף. לחיצה פותחת את הרשימה</p></div>
+      </header>
+      ${outcomeBars(a)}
     </section>
 
     <div class="grid-2">
@@ -85,6 +92,12 @@ export function render(root, state) {
       </section>
     </div>
 
+    ${a.influencers.length ? `
+    <section class="panel">
+      <header class="panel__head"><div><h2>לפי משפיען</h2><p class="muted">איזה שיתוף פעולה הביא מנויים, לא רק חשיפה</p></div></header>
+      ${influencerTable(a)}
+    </section>` : ''}
+
     <section class="panel">
       <header class="panel__head"><div><h2>לחזור אליהם היום</h2><p class="muted">לידים בטיפול עם פעולה מתוכננת להיום או באיחור</p></div></header>
       ${dueList(state.leads)}
@@ -98,6 +111,8 @@ export function render(root, state) {
   });
   root.onclick = e => {
     if (handleAction(e)) return;
+    const oc = e.target.closest('[data-outcome]');
+    if (oc) { sessionStorage.setItem('ribak:outcome', oc.dataset.outcome); return; }
     const row = e.target.closest('[data-open]');
     if (row) openDrawer(row.dataset.open);
   };
@@ -114,6 +129,34 @@ function kpi(label, value, sub = '', kind = '') {
     <span class="kpi__value">${value}</span>
     ${sub ? `<span class="kpi__sub">${esc(sub)}</span>` : '<span class="kpi__sub"></span>'}
   </div>`;
+}
+
+const OUTCOME_CLASS = { open: 'active', subscriber: 'won', churned: 'churn', repeat_only: 'warn', trial_only: 'lost', never_paid: 'lost' };
+
+function outcomeBars(a) {
+  if (!a.total) return `<div class="empty">אין לידים בטווח הזה</div>`;
+  const max = Math.max(...a.outcomes.map(o => o.count)) || 1;
+  return `<div class="outcomes">${a.outcomes.map(o => `
+    <a class="outcome outcome--${OUTCOME_CLASS[o.id]}" href="#/leads" data-outcome="${o.id}">
+      <span class="outcome__label">${esc(o.label)}</span>
+      <span class="outcome__track"><span class="outcome__fill" style="width:${(o.count / max) * 100}%"></span></span>
+      <span class="outcome__value">${fmtNum(o.count)}<small>${pct1(o.count, a.total)}%</small></span>
+    </a>`).join('')}</div>`;
+}
+
+function influencerTable(a) {
+  const max = Math.max(...a.influencers.map(i => i.total)) || 1;
+  return `<div class="table-wrap"><table class="table">
+    <thead><tr><th>משפיען</th><th class="num">לידים</th><th class="num">ניסיון</th><th class="num">מנוי</th><th class="num">המרה</th><th class="w-meter"></th></tr></thead>
+    <tbody>${a.influencers.map(i => `<tr>
+      <td>${esc(i.name)}</td>
+      <td class="num">${fmtNum(i.total)}</td>
+      <td class="num">${fmtNum(i.trial)}</td>
+      <td class="num">${fmtNum(i.won)}</td>
+      <td class="num ${i.won && i.conv >= a.convTotal ? 'good' : ''}">${i.conv}%</td>
+      <td class="w-meter">${meter(i.total, max)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 function sourcesTable(a) {
