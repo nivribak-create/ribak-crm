@@ -195,6 +195,25 @@ export function setNotes(id, notes) {
   patchLead(id, l => { l.notes = notes; });
 }
 
+// Script answers are saved continuously while a call is happening, so they
+// must not each push an event onto the timeline — only finishing does.
+export function saveScript(id, scriptId, patch) {
+  patchLead(id, l => {
+    const all = { ...(l.scripts || {}) };
+    all[scriptId] = { ...(all[scriptId] || {}), ...patch };
+    l.scripts = all;
+  });
+}
+
+export function finishScript(id, scriptId, summary) {
+  patchLead(id, l => {
+    const all = { ...(l.scripts || {}) };
+    all[scriptId] = { ...(all[scriptId] || {}), completedAt: nowIso() };
+    l.scripts = all;
+    l.events.push({ t: nowIso(), type: 'script', script: scriptId, text: summary });
+  });
+}
+
 export function addNote(id, text) {
   if (!text.trim()) return;
   patchLead(id, l => { l.events.push({ t: nowIso(), type: 'note', text: text.trim() }); });
@@ -352,6 +371,7 @@ function normalizeLead(raw) {
     lostAt: raw.lostAt || null,
     nextAt: raw.nextAt || null,
     attempts: Number(raw.attempts) || 0,
+    scripts: raw.scripts && typeof raw.scripts === 'object' ? raw.scripts : {},
     events: (Array.isArray(raw.events) && raw.events.length ? raw.events : [{ t, type: 'created', stage: 'new' }])
       .map(e => (e.stage && LEGACY_STAGES[e.stage] ? { ...e, stage: LEGACY_STAGES[e.stage] } : e)),
   };

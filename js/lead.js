@@ -2,6 +2,8 @@
 import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData } from './ui.js';
+import { openScript } from './callscript.js';
+import { SALES_SCRIPT, visibleFields } from './scripts.js';
 import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso } from './util.js';
 
 // ---- add / edit ---------------------------------------------------------
@@ -146,6 +148,16 @@ export function actionButtons(lead, { compact = false } = {}) {
   }
   const next = nextStage(lead.stage);
   const canAttempt = ['new', 'contacted', 'pitched', 'delivered', 'repeat'].includes(lead.stage);
+  // Before the trial is paid for, the sales call is the thing to do next.
+  const needsScript = ['new', 'contacted', 'pitched'].includes(lead.stage);
+  const doneScript = Boolean(lead.scripts?.sales?.completedAt);
+  if (needsScript) {
+    return `
+      <button class="btn btn--sm btn--primary" data-act="script" data-id="${lead.id}">${doneScript ? '↻ פתח תסריט' : '▶ שיחת מכירה'}</button>
+      ${doneScript ? `<button class="btn btn--sm" data-act="advance" data-id="${lead.id}" title="${esc(next.label)}">✓ ${esc(next.action)}</button>` : ''}
+      <button class="btn btn--sm btn--ghost" data-act="attempt" data-id="${lead.id}" title="נרשם ניסיון, ננסה שוב מחר">לא ענה</button>
+      <button class="btn btn--sm btn--ghost btn--lost" data-act="lost" data-id="${lead.id}" title="סימון כאבוד">✕${compact ? '' : ' אבד'}</button>`;
+  }
   // From the delivery onwards there are two good outcomes — another single
   // week, or the subscription itself — so both are one click away.
   const skipToSub = ['delivered', 'repeat'].includes(lead.stage) && next.id !== FINAL_STAGE;
@@ -168,6 +180,7 @@ export function handleAction(e) {
     case 'attempt': attempt(lead); break;
     case 'lost': openLostDialog(lead); break;
     case 'churn': openChurnDialog(lead); break;
+    case 'script': openScript(lead.id, 'sales'); break;
     case 'subscribe': subscribeNow(lead); break;
     case 'restore': restore(lead); break;
     case 'edit': openLeadForm(lead); break;
@@ -218,6 +231,25 @@ export function closeDrawer() {
   document.body.classList.remove('has-drawer');
   drawerId = null;
   if (location.hash.startsWith('#/lead/')) history.replaceState(null, '', '#/' + (sessionStorage.getItem('ribak:view') || 'pipeline'));
+}
+
+// What the sales call turned up, kept in front of you — the conversion
+// script explicitly asks for the customer's goal, and this is where it is.
+function scriptPanel(lead) {
+  const a = lead.scripts?.sales;
+  if (!a) return '';
+  const rows = visibleFields(SALES_SCRIPT, a)
+    .map(f => [f.ask, String(a[f.id] ?? '').trim()])
+    .filter(([, v]) => v);
+  if (!rows.length) return '';
+  return `
+    <section class="drawer__script">
+      <h3>מה למדנו בשיחת המכירה${a.completedAt ? '' : ' (לא הושלמה)'}</h3>
+      <dl class="learned">
+        ${rows.map(([q, v]) => `<div><dt>${esc(q)}</dt><dd>${esc(v)}</dd></div>`).join('')}
+      </dl>
+      <button class="btn btn--sm" data-act="script" data-id="${lead.id}">פתח את התסריט</button>
+    </section>`;
 }
 
 function renderDrawer() {
@@ -275,6 +307,7 @@ function renderDrawer() {
       <div><b>${lead.attempts || 0}</b><span>ניסיונות ללא מענה</span></div>
     </div>
     <div class="drawer__actions">${actionButtons(lead)}</div>
+    ${scriptPanel(lead)}
     <div class="drawer__fields">
       ${field('פעולה הבאה', `<input class="input" type="date" name="nextAt" value="${esc(lead.nextAt || '')}" min="">`, lead.nextAt ? dueLabel(lead.nextAt) : '')}
       ${field('הערות', `<textarea class="input" name="notes" rows="3" placeholder="הערות קבועות על הליד">${esc(lead.notes || '')}</textarea>`)}

@@ -128,4 +128,5 @@ export const EVENT_LABELS = {
   note:     'הערה',
   edited:   'פרטים עודכנו',
   imported: 'יובא מרשימה',
+  script:   'תסריט שיחה',
 };
