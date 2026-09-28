@@ -1,7 +1,7 @@
 import { STAGES, STAGE_BY_ID, SOURCES, stageIndex, OUTCOMES } from '../model.js';
 import { computeAnalytics, RANGES } from '../analytics.js';
 import { funnelRows, hbars, stackedColumns, meter } from '../charts.js';
-import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink } from '../util.js';
+import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime } from '../util.js';
 import { handleAction, openDrawer } from '../lead.js';
 
 const ui = {
@@ -26,6 +26,11 @@ export function render(root, state) {
     </div>
 
     ${!hasAny ? emptyState() : ''}
+
+    ${hasAny ? readout(a) : ''}
+    ${hasAny ? thisWeek(a) : ''}
+
+    <h2 class="section-break">הנתונים המלאים</h2>
 
     <section class="kpis">
       ${kpi('לידים נכנסו', fmtNum(a.total), rangeNote())}
@@ -132,6 +137,96 @@ function kpi(label, value, sub = '', kind = '') {
 }
 
 const OUTCOME_CLASS = { open: 'active', subscriber: 'won', churned: 'churn', repeat_only: 'warn', trial_only: 'lost', never_paid: 'lost' };
+
+// Said in sentences, because the numbers on their own were leaving the
+// reader to work out what they meant.
+function readout(a) {
+  const say = [];
+
+  if (a.leak) {
+    const s = a.leak.stage;
+    const next = STAGES[a.leak.index + 1];
+    say.push({
+      tone: 'bad',
+      head: `הכי הרבה לידים נופלים בשלב <b>${esc(s.label)}</b>`,
+      body: next
+        ? `${fmtNum(a.leak.reached)} הגיעו לשלב הזה, ${fmtNum(a.leak.advanced)} המשיכו ל${esc(next.label)}, ו-<b>${fmtNum(a.leak.lost)} נפלו כאן</b>.`
+        : `${fmtNum(a.leak.lost)} לקוחות הפסיקו אחרי שכבר היו מנויים.`,
+    });
+  }
+
+  say.push({
+    tone: a.sellTrial.pct >= 40 ? 'good' : 'warn',
+    head: 'מכירת שבוע ניסיון',
+    body: a.sellTrial.from
+      ? `דיברת עם ${fmtNum(a.sellTrial.from)} לידים בטלפון. <b>${fmtNum(a.sellTrial.to)} שילמו</b> על שבוע ניסיון – ${a.sellTrial.pct}%. ${fmtNum(a.sellTrial.lost)} לא סגרו.`
+      : 'עוד לא בוצעו שיחות מכירה בטווח הזה.',
+  });
+
+  say.push({
+    tone: a.sellSub.pct >= 50 ? 'good' : 'warn',
+    head: 'המרה ממנו למנוי',
+    body: a.sellSub.from
+      ? `${fmtNum(a.sellSub.from)} לקוחות קיבלו את האוכל. <b>${fmtNum(a.sellSub.to)} סגרו מנוי</b> – ${a.sellSub.pct}%. ${fmtNum(a.sellSub.lost)} לא המשיכו.`
+      : 'עוד אף אחד לא קיבל משלוח בטווח הזה.',
+  });
+
+  if (a.topReason) {
+    say.push({
+      tone: 'plain',
+      head: `הסיבה שחוזרת הכי הרבה: <b>${esc(a.topReason.label)}</b>`,
+      body: `${fmtNum(a.topReason.count)} ${plural(a.topReason.count, 'ליד', 'לידים')} – ${a.topReason.share}% מכל מי שאבד.`,
+    });
+  }
+
+  say.push({
+    tone: 'plain',
+    head: 'בשורה התחתונה',
+    body: a.total
+      ? `מתוך ${fmtNum(a.total)} לידים שנכנסו, <b>${fmtNum(a.sold)} הפכו למנויים</b> – ${a.convTotal}%, כלומר אחד מכל ${fmtNum(Math.max(1, Math.round(a.total / Math.max(1, a.sold))))}.`
+      : 'אין לידים בטווח הזה.',
+  });
+
+  return `<section class="readout">
+    ${say.map(x => `
+      <div class="read read--${x.tone}">
+        <p class="read__head">${x.head}</p>
+        <p class="read__body">${x.body}</p>
+      </div>`).join('')}
+  </section>`;
+}
+
+// The week has a shape: food goes out Sunday, orders close Wednesday
+// 23:00, and everyone who ate this week has to be converted before then.
+function thisWeek(a) {
+  const w = a.week;
+  const tight = w.toConvert > 0;
+  return `<section class="week">
+    <header class="week__head">
+      <h2>השבוע הזה</h2>
+      <span class="week__clock ${tight ? 'is-tight' : ''}">
+        הזמנות נסגרות ${esc(fmtDateTime(w.deadline.toISOString()))} · ${esc(deadlineLabel())}
+      </span>
+    </header>
+    <div class="week__cells">
+      <a class="wcell ${w.toConvert ? 'is-hot' : ''}" href="#/pipeline">
+        <b>${fmtNum(w.toConvert)}</b>
+        <span>קיבלו אוכל וממתינים להמרה למנוי</span>
+        <small>${w.toConvert ? 'צריך לסגור אותם לפני הדדליין' : 'אין ממתינים'}</small>
+      </a>
+      <a class="wcell" href="#/pipeline">
+        <b>${fmtNum(w.toCall)}</b>
+        <span>לידים חדשים שממתינים לשיחת מכירה</span>
+        <small>${w.toCall ? 'כל אחד שייסגר עד הדדליין יקבל אוכל ביום ראשון' : 'אין ממתינים'}</small>
+      </a>
+      <a class="wcell" href="#/pipeline">
+        <b>${fmtNum(w.waitingDelivery)}</b>
+        <span>שילמו וממתינים למשלוח ביום ראשון</span>
+        <small>${w.waitingDelivery ? 'אליהם מתקשרים ביום שלישי' : 'אין ממתינים'}</small>
+      </a>
+    </div>
+  </section>`;
+}
 
 function outcomeBars(a) {
   if (!a.total) return `<div class="empty">אין לידים בטווח הזה</div>`;

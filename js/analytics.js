@@ -4,7 +4,7 @@
 // the last 30 days, how many closed".
 
 import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf } from './model.js';
-import { dayStart, addDays, daysBetween, pct1 } from './util.js';
+import { dayStart, addDays, daysBetween, pct1, nextDeadline } from './util.js';
 
 export const RANGES = [
   { id: '7',   label: '7 ימים',  days: 7 },
@@ -118,12 +118,34 @@ export function computeAnalytics(allLeads, filters = {}) {
   };
 
   const trialReached = funnel[stageIndex('trial')].reached;
+  const pitched = funnel[stageIndex('pitched')].reached;
+  const delivered = funnel[stageIndex('delivered')].reached;
+
+  // The two conversions the business actually turns on: talking someone
+  // into a first week, and turning that first week into a subscription.
+  const sellTrial = { from: pitched, to: trialReached, pct: pct1(trialReached, pitched), lost: pitched - trialReached };
+  const sellSub = { from: delivered, to: sold, pct: pct1(sold, delivered), lost: delivered - sold };
+
+  // Where the most people are actually falling out — in people, not
+  // percentages, because that is the hole worth plugging first.
+  const leak = [...funnel].filter(f => f.lost > 0).sort((a, b) => b.lost - a.lost)[0] || null;
+  const topReason = reasons[0] || null;
+
+  // This week's clock. Orders close Wednesday 23:00; whoever got food last
+  // Sunday has until then to become a subscriber.
+  const week = {
+    deadline: nextDeadline(),
+    toConvert: allLeads.filter(l => l.status === 'active' && ['delivered', 'repeat'].includes(l.stage)).length,
+    toCall: allLeads.filter(l => l.status === 'active' && l.stage === 'new').length,
+    waitingDelivery: allLeads.filter(l => l.status === 'active' && l.stage === 'trial').length,
+  };
   return {
     leads, total: n, sold, won, churned, lost, active, outcomes,
     convTotal: pct1(sold, n),
     convTrial: pct1(sold, trialReached),
     churnRate: pct1(churned, sold),
     trialReached,
+    sellTrial, sellSub, leak, topReason, week,
     funnel, reasons, weekly, sources, influencers, stageDays, avgDaysToWin,
     attempts: { total: attemptEvents.length, byStage: attemptsByStage, leads: leadsWithAttempts },
     due,

@@ -898,6 +898,49 @@ body.has-script { overflow: hidden; }
 }
 
 /* ==========================================================================
+   Dashboard readout — the findings in sentences, before any chart
+   ========================================================================== */
+.readout { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.read {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  border-inline-start: 4px solid var(--muted); padding: 14px 17px;
+}
+.read--bad { border-inline-start-color: var(--lost); }
+.read--warn { border-inline-start-color: var(--warn); }
+.read--good { border-inline-start-color: var(--f4); }
+.read--plain { border-inline-start-color: var(--line-strong); }
+.read__head { font-size: 16px; font-weight: 500; line-height: 1.45; text-wrap: pretty; }
+.read__head b { font-weight: 700; }
+.read__body { font-size: 15px; line-height: 1.6; color: var(--ink-2); margin-top: 4px; text-wrap: pretty; }
+.read__body b { color: var(--ink); font-weight: 600; }
+
+.week { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 16px 18px; margin-bottom: 18px; }
+.week__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.week__clock { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.week__clock.is-tight { color: var(--warn-soft-ink); background: var(--warn-soft); padding: 3px 9px; border-radius: 6px; font-weight: 500; }
+.week__cells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.wcell { display: flex; flex-direction: column; gap: 2px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); }
+.wcell:hover { background: var(--surface-2); text-decoration: none; border-color: var(--line-strong); }
+.wcell b { font-family: var(--font-figures); font-size: 38px; line-height: 1; }
+.wcell span { font-size: 13.5px; line-height: 1.35; }
+.wcell small { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.wcell.is-hot { border-color: var(--warn); background: var(--warn-soft); }
+.wcell.is-hot b, .wcell.is-hot span { color: var(--warn-soft-ink); }
+.wcell.is-hot small { color: var(--warn-soft-ink); opacity: .85; }
+
+.section-break {
+  font-size: 12.5px; font-weight: 600; color: var(--muted); letter-spacing: .04em;
+  margin: 26px 0 12px; padding-top: 16px; border-top: 1px solid var(--line);
+}
+
+@media (max-width: 700px) {
+  .week__cells { grid-template-columns: 1fr; }
+  .wcell b { font-size: 32px; }
+  .read__head { font-size: 15px; }
+  .read__body { font-size: 14px; }
+}
+
+/* ==========================================================================
    Responsive
    ========================================================================== */
 @media (max-width: 1100px) {
