@@ -1,195 +1,275 @@
-// Running a call script. Full-screen because it is read off the screen
-// while the phone is at your ear: the lines to say are large and calm, the
-// things to write down sit right under the question that produced them.
-// Every keystroke is saved, so a call that gets cut off keeps its notes.
+// Running a call script, built for the one situation it is used in: a
+// phone against your ear while you read and type. Two rules follow from
+// that — nothing on screen may jump while you work (so the view is built
+// once and then patched, never re-rendered), and the next step is always
+// reachable without hunting (so the controls are pinned to the bottom).
 
-import { SCRIPTS, visibleFields, answeredCount, isVisible, cityOutOfArea } from './scripts.js';
+import { SCRIPTS, visibleFields, isVisible, cityOutOfArea } from './scripts.js';
 import * as store from './store.js';
 import { esc, fmtPhone, telLink, waLink, debounce, fmtNum } from './util.js';
 import { toast } from './ui.js';
-import { openLostDialog, advance, attempt } from './lead.js';
+import { openLostDialog, attempt } from './lead.js';
 
 let host = null;
-let state = null;   // { leadId, scriptId, section, answers }
+let state = null;   // { leadId, scriptId, section, answers, said:Set }
 
+// ---- lifecycle ----------------------------------------------------------
 export function openScript(leadId, scriptId = 'sales') {
   const lead = store.getLead(leadId);
   if (!lead) return;
   state = {
-    leadId, scriptId,
-    section: 0,
+    leadId, scriptId, section: 0,
     answers: { ...(lead.scripts?.[scriptId] || {}) },
+    said: new Set(),
   };
   if (!state.answers.startedAt) {
     state.answers.startedAt = new Date().toISOString();
     store.saveScript(leadId, scriptId, { startedAt: state.answers.startedAt });
   }
-  mount();
-  render();
+  // Resume where the answers stop, so a call picked back up opens in the
+  // right place instead of at the greeting.
+  state.section = firstUnfinished();
+  build();
+  document.addEventListener('keydown', onKey);
 }
 
 export function closeScript() {
   if (!host) return;
   host.classList.remove('is-open');
   document.body.classList.remove('has-script');
-  setTimeout(() => { host?.remove(); host = null; state = null; }, 160);
+  const dying = host;
+  setTimeout(() => dying.remove(), 160);
+  host = null; state = null;
   document.removeEventListener('keydown', onKey);
+}
+
+function firstUnfinished() {
+  const script = SCRIPTS[state.scriptId];
+  for (let i = 0; i < script.sections.length; i++) {
+    const fields = script.sections[i].fields.filter(f => isVisible(f, state.answers));
+    if (fields.some(f => !String(state.answers[f.id] ?? '').trim())) return i;
+  }
+  return 0;
 }
 
 function onKey(e) {
   if (!state) return;
-  if (e.key === 'Escape' && !document.body.classList.contains('has-modal')) closeScript();
-}
-
-function mount() {
-  host = document.createElement('div');
-  host.className = 'scriptview';
-  document.body.appendChild(host);
-  document.body.classList.add('has-script');
-  requestAnimationFrame(() => host.classList.add('is-open'));
-  document.addEventListener('keydown', onKey);
+  if (e.key === 'Escape' && !document.body.classList.contains('has-modal')) { closeScript(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); go(state.section + 1); }
 }
 
 const save = debounce(() => {
   if (state) store.saveScript(state.leadId, state.scriptId, state.answers);
 }, 400);
 
-function render() {
+// ---- the shell, built once ---------------------------------------------
+function build() {
   const lead = store.getLead(state.leadId);
   const script = SCRIPTS[state.scriptId];
-  if (!lead || !script) { closeScript(); return; }
 
-  const section = script.sections[state.section];
-  const total = script.sections.length;
-  const answered = answeredCount(script, state.answers);
-  const asked = visibleFields(script, state.answers).length;
-
-  const fill = text => text
-    .replace('[שם]', lead.name.split(' ')[0] || lead.name)
-    .replace('{why}', state.answers.why?.trim() || '…מה שאמר לך שהוא מחפש…');
-
+  host = document.createElement('div');
+  host.className = 'callview';
   host.innerHTML = `
-    <div class="scriptview__bar">
-      <button class="icon-btn" data-close-script aria-label="סגירה">✕</button>
-      <div class="scriptview__who">
+    <header class="callview__top">
+      <button class="icon-btn" data-close aria-label="סגירת התסריט">✕</button>
+      <div class="callview__who">
         <b>${esc(lead.name)}</b>
-        <a class="contact contact--tel" href="${telLink(lead.phone)}">${esc(fmtPhone(lead.phone))}</a>
-        <a class="contact contact--wa" href="${waLink(lead.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
+        <span class="callview__tags">
+          <a class="contact contact--tel" href="${telLink(lead.phone)}">${esc(fmtPhone(lead.phone))}</a>
+          <a class="contact contact--wa" href="${waLink(lead.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
+        </span>
       </div>
-      <div class="scriptview__meta">
-        <span class="muted">${fmtNum(answered)}/${fmtNum(asked)} תועדו</span>
-      </div>
-    </div>
+      <div class="callview__done"><b data-answered>0</b><span data-total>0</span></div>
+      <div class="callview__line"><span data-line></span></div>
+    </header>
 
-    <nav class="steps" aria-label="שלבי השיחה">
+    <nav class="rail" aria-label="שלבי השיחה">
       ${script.sections.map((s, i) => `
-        <button class="step ${i === state.section ? 'is-on' : ''} ${i < state.section ? 'is-done' : ''}" data-section="${i}">
-          <span class="step__n">${i + 1}</span><span class="step__t">${esc(s.title)}</span>
+        <button class="rail__step" data-section="${i}">
+          <span class="rail__dot"></span><span class="rail__label">${esc(s.title)}</span>
         </button>`).join('')}
     </nav>
 
-    <div class="scriptview__body">
-      ${section.note ? `<p class="script__note">${esc(section.note)}</p>` : ''}
+    <div class="callview__scroll" data-scroll></div>
 
-      <div class="says">
-        ${section.say.map(line => `<p class="say">${esc(fill(line))}</p>`).join('')}
-      </div>
-
-      ${section.fields.length ? `
-        <div class="records">
-          ${section.fields.filter(f => isVisible(f, state.answers)).map(fieldHtml).join('')}
-        </div>` : ''}
-
-      ${section.closing ? closingHtml(lead) : ''}
-    </div>
-
-    <footer class="scriptview__foot">
-      <button class="btn" data-prev ${state.section === 0 ? 'disabled' : ''}>← הקודם</button>
-      ${state.section < total - 1
-        ? '<button class="btn btn--primary" data-next>הבא →</button>'
-        : ''}
+    <footer class="callview__bottom">
+      <button class="btn btn--lg" data-prev>← הקודם</button>
+      <button class="btn btn--lg btn--primary" data-next></button>
     </footer>`;
 
-  host.querySelector('[data-close-script]').addEventListener('click', closeScript);
+  document.body.appendChild(host);
+  document.body.classList.add('has-script');
+  requestAnimationFrame(() => host.classList.add('is-open'));
+
+  host.querySelector('[data-close]').addEventListener('click', closeScript);
   host.querySelector('[data-prev]').addEventListener('click', () => go(state.section - 1));
-  host.querySelector('[data-next]')?.addEventListener('click', () => go(state.section + 1));
-  host.querySelectorAll('[data-section]').forEach(b =>
-    b.addEventListener('click', () => go(Number(b.dataset.section))));
+  host.querySelector('[data-next]').addEventListener('click', () => go(state.section + 1));
+  host.querySelectorAll('[data-section]').forEach((b, i) => b.addEventListener('click', () => go(i)));
 
-  host.querySelectorAll('[data-field]').forEach(el => {
-    const id = el.dataset.field;
-    el.addEventListener('input', () => { state.answers[id] = el.value; save(); maybeFlagArea(id); });
-    el.addEventListener('change', () => { state.answers[id] = el.value; save(); renderIfBranching(id); });
-  });
-  host.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => {
-    const { pick, value } = b.dataset;
-    state.answers[pick] = state.answers[pick] === value ? '' : value;
+  // One delegated listener for the whole scroll area — nothing is rebound
+  // when a field appears or disappears.
+  const scroll = host.querySelector('[data-scroll]');
+  scroll.addEventListener('input', e => {
+    const f = e.target.closest('[data-field]');
+    if (!f) return;
+    state.answers[f.dataset.field] = f.value;
+    autoGrow(f);
+    if (f.dataset.field === 'city') flagArea();
+    syncConditionals();
+    updateProgress();
     save();
-    render();
-  }));
+  });
+  scroll.addEventListener('click', e => {
+    const chip = e.target.closest('[data-pick]');
+    if (chip) {
+      const { pick, value } = chip.dataset;
+      state.answers[pick] = state.answers[pick] === value ? '' : value;
+      chip.parentElement.querySelectorAll('[data-pick]').forEach(c =>
+        c.classList.toggle('is-on', c.dataset.value === state.answers[pick]));
+      syncConditionals();
+      updateProgress();
+      save();
+      return;
+    }
+    const say = e.target.closest('.say');
+    if (say) {
+      const i = say.dataset.say;
+      if (state.said.has(i)) state.said.delete(i); else state.said.add(i);
+      say.classList.toggle('is-said', state.said.has(i));
+      return;
+    }
+    const act = e.target.closest('[data-outcome]');
+    if (act) finish(act.dataset.outcome);
+  });
+  // Enter moves on to the next field instead of doing nothing.
+  scroll.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    const f = e.target.closest('[data-field]');
+    if (!f || f.tagName === 'TEXTAREA') return;
+    e.preventDefault();
+    const all = [...scroll.querySelectorAll('[data-field]')].filter(x => x.offsetParent);
+    all[all.indexOf(f) + 1]?.focus();
+  });
 
-  host.querySelector('[data-outcome-close]')?.addEventListener('click', () => finish('closed'));
-  host.querySelector('[data-outcome-think]')?.addEventListener('click', () => finish('open'));
-  host.querySelector('[data-outcome-lost]')?.addEventListener('click', () => finish('lost'));
-  host.querySelector('[data-outcome-noanswer]')?.addEventListener('click', () => finish('no_answer'));
-
-  host.querySelector('.scriptview__body').scrollTop = 0;
+  paintSection();
 }
 
-// Choice fields change which later questions apply, so they redraw.
-function renderIfBranching(id) {
-  if (['tried', 'ordered'].includes(id)) render();
-}
+// ---- one section at a time ---------------------------------------------
+function paintSection() {
+  const lead = store.getLead(state.leadId);
+  const script = SCRIPTS[state.scriptId];
+  const section = script.sections[state.section];
+  const last = state.section === script.sections.length - 1;
 
-function maybeFlagArea(id) {
-  if (id !== 'city') return;
-  const warn = host.querySelector('[data-area-warn]');
-  if (warn) warn.hidden = !cityOutOfArea(state.answers.city);
+  const fill = t => t
+    .replace('[שם]', lead.name.split(' ')[0] || lead.name)
+    .replace('{why}', state.answers.why?.trim() || '…מה שאמר לך שהוא מחפש…');
+
+  const scroll = host.querySelector('[data-scroll]');
+  scroll.innerHTML = `
+    <div class="sheet">
+      <h1 class="sheet__title">${esc(section.title)}</h1>
+      ${section.note ? `<p class="sheet__note">${esc(section.note)}</p>` : ''}
+      <div class="says">
+        ${section.say.map((line, i) => `
+          <p class="say" data-say="${state.section}-${i}" title="לחיצה מסמנת שאמרת">${esc(fill(line))}</p>`).join('')}
+      </div>
+      ${section.fields.length ? `<div class="records">${section.fields.map(askHtml).join('')}</div>` : ''}
+      ${last ? endHtml() : ''}
+    </div>`;
+
+  host.querySelectorAll('.rail__step').forEach((b, i) => {
+    b.classList.toggle('is-on', i === state.section);
+    b.classList.toggle('is-done', i < state.section);
+  });
+  host.querySelector('[data-prev]').disabled = state.section === 0;
+  const next = host.querySelector('[data-next]');
+  next.hidden = last;
+  if (!last) next.textContent = `${script.sections[state.section + 1].title} →`;
+
+  scroll.querySelectorAll('textarea[data-field]').forEach(autoGrow);
+  syncConditionals();
+  updateProgress();
+  flagArea();
+  scroll.scrollTop = 0;
 }
 
 function go(i) {
   const script = SCRIPTS[state.scriptId];
-  state.section = Math.max(0, Math.min(script.sections.length - 1, i));
-  render();
+  const n = Math.max(0, Math.min(script.sections.length - 1, i));
+  if (n === state.section) return;
+  state.section = n;
+  paintSection();
 }
 
-function fieldHtml(f) {
-  const v = state.answers[f.id] ?? '';
-  const label = `
-    <span class="record__ask">${esc(f.ask)}${f.key ? '<i class="record__key" title="חשוב – יופיע בשיחת ההמרה">★</i>' : ''}</span>
-    ${f.hint ? `<span class="record__hint">${esc(f.hint)}</span>` : ''}`;
+// ---- patches, never rebuilds -------------------------------------------
+function syncConditionals() {
+  host.querySelectorAll('[data-record]').forEach(el => {
+    const field = fieldById(el.dataset.record);
+    if (field) el.hidden = !isVisible(field, state.answers);
+  });
+}
 
+function updateProgress() {
+  const script = SCRIPTS[state.scriptId];
+  const fields = visibleFields(script, state.answers);
+  const done = fields.filter(f => String(state.answers[f.id] ?? '').trim()).length;
+  host.querySelector('[data-answered]').textContent = fmtNum(done);
+  host.querySelector('[data-total]').textContent = `מתוך ${fmtNum(fields.length)} תועדו`;
+  host.querySelector('[data-line]').style.width = `${fields.length ? (done / fields.length) * 100 : 0}%`;
+}
+
+function flagArea() {
+  const warn = host.querySelector('[data-area-warn]');
+  if (warn) warn.hidden = !cityOutOfArea(state.answers.city);
+}
+
+function autoGrow(el) {
+  if (el.tagName !== 'TEXTAREA') return;
+  el.style.height = 'auto';
+  el.style.height = `${Math.max(48, el.scrollHeight)}px`;
+}
+
+const fieldById = id => SCRIPTS[state.scriptId].sections.flatMap(s => s.fields).find(f => f.id === id);
+
+// ---- pieces -------------------------------------------------------------
+function askHtml(f) {
+  const v = state.answers[f.id] ?? '';
+  const head = `
+    <span class="ask__q">${esc(f.ask)}${f.key ? '<i class="ask__key" title="חשוב – יופיע בשיחת ההמרה">★</i>' : ''}</span>
+    ${f.hint ? `<span class="ask__hint">${esc(f.hint)}</span>` : ''}`;
+
+  let control;
   if (f.type === 'choice') {
-    return `<div class="record">
-      ${label}
-      <div class="chips chips--wrap">
-        ${f.options.map(o => `<button class="chip ${v === o ? 'is-on' : ''}" data-pick="${f.id}" data-value="${esc(o)}">${esc(o)}</button>`).join('')}
-      </div>
-    </div>`;
+    control = `<div class="picks">${f.options.map(o =>
+      `<button class="pick ${v === o ? 'is-on' : ''}" data-pick="${f.id}" data-value="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
+  } else if (f.type === 'textarea') {
+    control = `<textarea class="write" data-field="${f.id}" rows="1" placeholder="${esc(f.placeholder || 'מה הוא ענה…')}">${esc(v)}</textarea>`;
+  } else {
+    control = `<input class="write" data-field="${f.id}" type="${f.type === 'number' ? 'number' : 'text'}"
+      ${f.type === 'number' ? 'inputmode="numeric" min="0"' : ''} value="${esc(v)}" placeholder="${esc(f.placeholder || '')}">`;
   }
   const extra = f.id === 'city'
-    ? `<p class="record__warn" data-area-warn ${cityOutOfArea(v) ? '' : 'hidden'}>נראה שזה מחוץ לאזור החלוקה (אשדוד–נתניה)</p>`
+    ? '<p class="ask__warn" data-area-warn hidden>נראה שזה מחוץ לאזור החלוקה (אשדוד–נתניה)</p>'
     : '';
-  const input = f.type === 'textarea'
-    ? `<textarea class="input" data-field="${f.id}" rows="${f.rows || 2}" placeholder="${esc(f.placeholder || 'מה הוא ענה…')}">${esc(v)}</textarea>`
-    : `<input class="input" data-field="${f.id}" type="${f.type === 'number' ? 'number' : 'text'}" ${f.type === 'number' ? 'inputmode="numeric" min="0"' : ''} value="${esc(v)}" placeholder="${esc(f.placeholder || '')}">`;
-  return `<div class="record">${label}${input}${extra}</div>`;
+  return `<div class="ask" data-record="${f.id}">${head}${control}${extra}</div>`;
 }
 
-function closingHtml(lead) {
+function endHtml() {
   return `
-    <div class="outcome-box">
-      <h3>איך נגמרה השיחה?</h3>
-      <div class="outcome-box__actions">
-        <button class="btn btn--primary" data-outcome-close>✓ סגר שבוע ניסיון</button>
-        <button class="btn" data-outcome-think>עוד חושב – פולואפ</button>
-        <button class="btn" data-outcome-noanswer>לא ענה</button>
-        <button class="btn btn--danger-ghost" data-outcome-lost>לא מעוניין</button>
+    <div class="end">
+      <h2>איך נגמרה השיחה?</h2>
+      <div class="end__actions">
+        <button class="btn btn--lg btn--primary" data-outcome="closed">✓ סגר שבוע ניסיון</button>
+        <button class="btn btn--lg" data-outcome="open">עוד חושב</button>
+        <button class="btn btn--lg" data-outcome="no_answer">לא ענה</button>
+        <button class="btn btn--lg btn--danger-ghost" data-outcome="lost">לא מעוניין</button>
       </div>
-      <p class="field__hint">מה שתיעדת נשמר בכל מקרה, גם אם השיחה לא נגמרה בסגירה.</p>
+      <p class="end__hint">מה שתיעדת כבר נשמר – גם אם השיחה לא נגמרה בסגירה.</p>
     </div>`;
 }
 
+// ---- finishing ----------------------------------------------------------
 function summarize() {
   const a = state.answers;
   const bits = [];
@@ -202,20 +282,19 @@ function summarize() {
 }
 
 function finish(outcome) {
-  const lead = store.getLead(state.leadId);
   const { leadId, scriptId } = state;
+  const lead = store.getLead(leadId);
   state.answers.outcome = outcome;
   store.saveScript(leadId, scriptId, state.answers);
   store.finishScript(leadId, scriptId, summarize());
 
-  // The pitch itself is progress even when nothing was sold.
+  // Having pitched is progress even when nothing was sold.
   if (['new', 'contacted'].includes(lead.stage)) store.advanceLead(leadId, 'pitched');
-
-  const after = store.getLead(leadId);
   closeScript();
 
+  const after = store.getLead(leadId);
   if (outcome === 'closed') { store.advanceLead(leadId, 'trial'); toast(`${after.name} סגר שבוע ניסיון 🎉`, 'good'); }
-  else if (outcome === 'no_answer') { attempt(after); }
-  else if (outcome === 'lost') { openLostDialog(store.getLead(leadId)); }
-  else { toast('השיחה תועדה – קבע פולואפ בכרטיס'); }
+  else if (outcome === 'no_answer') attempt(after);
+  else if (outcome === 'lost') openLostDialog(after);
+  else toast('השיחה תועדה – קבע פולואפ בכרטיס');
 }
