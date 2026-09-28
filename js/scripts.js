@@ -7,7 +7,7 @@ export const SALES_SCRIPT = {
   id: 'sales',
   title: 'שיחת מכירה – ליד חדש',
   // Anyone who has not paid for a trial week yet goes through this.
-  stages: ['new', 'contacted', 'pitched'],
+  stages: ['new', 'pitched'],
   sections: [
     {
       id: 'greeting',

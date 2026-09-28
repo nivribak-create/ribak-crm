@@ -7,7 +7,6 @@
 
 export const STAGES = [
   { id: 'new',        label: 'ליד חדש',              short: 'חדש',      done: 'ליד חדש נכנס',       action: null },
-  { id: 'contacted',  label: 'נוצר קשר',             short: 'נוצר קשר', done: 'נוצר קשר',           action: 'שלחתי הודעה' },
   { id: 'pitched',    label: 'בוצעה שיחת מכירה',     short: 'שיחת מכירה', done: 'בוצעה שיחת מכירה', action: 'ביצעתי שיחת מכירה' },
   { id: 'trial',      label: 'סגר שבוע ניסיון',      short: 'ניסיון',   done: 'נסגר שבוע ניסיון',   action: 'סגר שבוע ניסיון' },
   { id: 'delivered',  label: 'קיבל את המשלוח',       short: 'קיבל אוכל', done: 'קיבל את המשלוח',    action: 'קיבל את המשלוח' },
@@ -23,16 +22,19 @@ export const FINAL_STAGE = STAGES[STAGES.length - 1].id;
 // Stage ids used before the pipeline was rebuilt around the real flow.
 // Follow-up was demoted from a stage to an action, so those leads land on
 // the sales call they had already been through.
-export const LEGACY_STAGES = { whatsapp: 'contacted', call: 'pitched', followup: 'pitched' };
+// 'whatsapp' and 'contacted' were a step between arriving and being sold
+// to; in practice the call is the first real move, so they fold back into
+// the new lead.
+export const LEGACY_STAGES = { whatsapp: 'new', contacted: 'new', call: 'pitched', followup: 'pitched' };
 
 // Each reason is the "negative" of a step. `from` lists the stages a lead
 // can be standing on when the reason applies, so the lost dialog shows the
 // relevant ones first. The wording comes from what customers actually say.
 export const LOST_REASONS = [
-  { id: 'no_answer',     label: 'לא ענה אחרי כמה ניסיונות',      from: ['new', 'contacted', 'pitched', 'trial', 'delivered', 'repeat'] },
-  { id: 'invalid',       label: 'מספר לא תקין',                  from: ['new', 'contacted'] },
-  { id: 'irrelevant',    label: 'לא רלוונטי / ליד כפול',         from: ['new', 'contacted'] },
-  { id: 'out_of_area',   label: 'מחוץ לאזור החלוקה',             from: ['new', 'contacted', 'pitched'] },
+  { id: 'no_answer',     label: 'לא ענה אחרי כמה ניסיונות',      from: ['new', 'pitched', 'trial', 'delivered', 'repeat'] },
+  { id: 'invalid',       label: 'מספר לא תקין',                  from: ['new'] },
+  { id: 'irrelevant',    label: 'לא רלוונטי / ליד כפול',         from: ['new'] },
+  { id: 'out_of_area',   label: 'מחוץ לאזור החלוקה',             from: ['new', 'pitched'] },
   { id: 'price',         label: 'יקר לי',                        from: ['pitched', 'delivered', 'repeat', 'subscribed'] },
   { id: 'thinking',      label: 'אמר שיחשוב ולא חזר',            from: ['pitched'] },
   { id: 'delivery_time', label: 'זמני המשלוח לא מתאימים',        from: ['pitched'] },
@@ -100,7 +102,7 @@ export const OUTCOMES = [
   { id: 'churned',     label: 'היה מנוי והפסיק',           test: l => l.status === 'churned' },
   { id: 'repeat_only', label: 'הזמין שוב אבל בלי מנוי',    test: l => l.stage === 'repeat' && l.status === 'lost' },
   { id: 'trial_only',  label: 'ניסה שבוע ולא המשיך',       test: l => ['trial', 'delivered'].includes(l.stage) && l.status === 'lost' },
-  { id: 'never_paid',  label: 'אבד לפני שבוע הניסיון',     test: l => ['new', 'contacted', 'pitched'].includes(l.stage) && l.status === 'lost' },
+  { id: 'never_paid',  label: 'אבד לפני שבוע הניסיון',     test: l => ['new', 'pitched'].includes(l.stage) && l.status === 'lost' },
 ];
 export const OUTCOME_BY_ID = Object.fromEntries(OUTCOMES.map(o => [o.id, o]));
 export const outcomeOf = l => OUTCOMES.find(o => o.test(l))?.id || 'open';

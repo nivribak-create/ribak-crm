@@ -182,9 +182,9 @@ export function actionButtons(lead, { compact = false } = {}) {
       <button class="btn btn--sm btn--ghost btn--lost" data-act="churn" data-id="${lead.id}" title="המנוי הופסק">ביטל מנוי</button>`;
   }
   const next = nextStage(lead.stage);
-  const canAttempt = ['new', 'contacted', 'pitched', 'delivered', 'repeat'].includes(lead.stage);
+  const canAttempt = ['new', 'pitched', 'delivered', 'repeat'].includes(lead.stage);
   // Before the trial is paid for, the sales call is the thing to do next.
-  const needsScript = ['new', 'contacted', 'pitched'].includes(lead.stage);
+  const needsScript = ['new', 'pitched'].includes(lead.stage);
   const doneScript = Boolean(lead.scripts?.sales?.completedAt);
   if (needsScript) {
     return `
