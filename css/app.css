@@ -770,6 +770,19 @@ kbd {
   .board--infl { grid-auto-columns: 86vw; }
 }
 
+/* pulling collaborators out of the lead list */
+.pull-list { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; margin-bottom: 14px; padding-inline-end: 4px; }
+.pull { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.pull:hover { background: var(--surface-2); }
+.pull:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.pull > input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+.pull__body { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.pull__body b { font-weight: 600; font-size: 14.5px; }
+.pull__body small { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pull__body .input { height: 30px; font-size: 13px; }
+.pull__opt { margin-bottom: 10px; align-items: flex-start; }
+.pull__opt span { line-height: 1.4; }
+
 /* ==========================================================================
    Responsive
    ========================================================================== */

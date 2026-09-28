@@ -6,10 +6,33 @@
 import { INFLUENCER_STATUSES, INFLUENCER_STATUS_BY_ID, INFLUENCER_SOURCE, everSubscribed, stageIndex } from '../model.js';
 import * as store from '../store.js';
 import { openModal, confirmDialog, toast, field, formData } from '../ui.js';
-import { esc, fmtNum, pct1, relDays } from '../util.js';
+import { esc, fmtNum, pct1, fmtPhone, telLink, waLink, normPhone } from '../util.js';
+
+// Some people in the contact list were never customers — they are people a
+// collaboration was discussed with, and someone wrote that next to their
+// name. This finds them so they can be moved where they belong.
+const COLLAB_RE = /שת["'׳״]?פ|שיתוף\s*פעולה|משפיע|קולאב|collab|influencer|ambassador|ברטר/i;
+const looksLikeCollab = l => COLLAB_RE.test(`${l.name} ${l.notes}`);
+
+const handleFrom = name => String(name || '')
+  .replace(COLLAB_RE, '')
+  .replace(/[^\p{L}\p{N}_.]+/gu, '_')
+  .replace(/^_+|_+$/g, '')
+  .slice(0, 30)
+  .toLowerCase();
+
+// Someone already moved across may have been given a different handle, so
+// the phone number is what reliably says "this one is already handled".
+function alreadyThere(list) {
+  const handles = new Set(list.map(i => i.handle.toLowerCase()));
+  const phones = new Set(list.map(i => normPhone(i.phone)).filter(Boolean));
+  return l => handles.has(handleFrom(l.name)) || phones.has(normPhone(l.phone));
+}
 
 export function render(root, state) {
   const list = store.getInfluencers();
+  const seen = alreadyThere(list);
+  const pending = state.leads.filter(l => looksLikeCollab(l) && !seen(l)).length;
   const stats = statsByHandle(state.leads);
   const cols = INFLUENCER_STATUSES.map(s => ({ status: s, items: list.filter(i => i.status === s.id) }));
   const totals = list.reduce((acc, i) => {
@@ -21,6 +44,7 @@ export function render(root, state) {
   root.innerHTML = `
     <div class="toolbar">
       <button class="btn btn--primary" data-add>+ משפיען</button>
+      <button class="btn" data-pull>⤴ משוך מהלידים${pending ? ` (${fmtNum(pending)})` : ''}</button>
       <span class="toolbar__note muted">
         ${fmtNum(list.length)} ברשימה${totals.leads ? ` · הביאו ${fmtNum(totals.leads)} לידים ו-${fmtNum(totals.won)} מנויים` : ''}
       </span>
@@ -38,6 +62,7 @@ export function render(root, state) {
     </div>`;
 
   root.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm()));
+  root.querySelector('[data-pull]')?.addEventListener('click', () => openPull(state));
   root.onclick = e => {
     if (e.target.closest('a')) { e.stopPropagation(); return; }
     const move = e.target.closest('[data-move]');
@@ -91,6 +116,10 @@ function card(inf, s) {
       ${inf.followers ? `<span class="card__source">${esc(inf.followers)}</span>` : ''}
     </div>
     ${inf.name ? `<div class="card__row muted">${esc(inf.name)}</div>` : ''}
+    ${inf.phone ? `<div class="card__meta">
+      <a class="card__phone" href="${telLink(inf.phone)}">${esc(fmtPhone(inf.phone))}</a>
+      <a class="card__wa" href="${waLink(inf.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
+    </div>` : ''}
     ${s ? `
       <div class="icard__stats">
         <div><b>${fmtNum(s.total)}</b><span>לידים</span></div>
@@ -113,6 +142,7 @@ function openForm(inf = null) {
     <form class="form" id="infl-form">
       ${field('שם משתמש באינסטגרם', `<input class="input" name="handle" required value="${esc(inf?.handle || '')}" placeholder="noa_fit" autocomplete="off" dir="ltr">`, 'בלי @ – זה מה שמקשר בין המשפיען ללידים שהוא מביא')}
       ${field('שם', `<input class="input" name="name" value="${esc(inf?.name || '')}" placeholder="נועה כהן" autocomplete="off">`)}
+      ${field('טלפון', `<input class="input" name="phone" inputmode="tel" value="${esc(inf?.phone || '')}" placeholder="050-0000000" autocomplete="off">`)}
       ${field('עוקבים', `<input class="input" name="followers" value="${esc(inf?.followers || '')}" placeholder="45K" autocomplete="off">`)}
       ${field('סטטוס', `<select class="input" name="status">${INFLUENCER_STATUSES.map(s => `<option value="${s.id}" ${inf?.status === s.id ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}</select>`)}
       ${field('הערות', `<textarea class="input" name="notes" rows="3" placeholder="מה סוכם, כמה ביקש, מתי לחזור אליו">${esc(inf?.notes || '')}</textarea>`)}
@@ -140,5 +170,69 @@ function openForm(inf = null) {
       store.deleteInfluencer(inf.id);
       toast('נמחק');
     }
+  });
+}
+
+
+// ---- pulling collaborators out of the lead list -------------------------
+function openPull(state) {
+  const seen = alreadyThere(store.getInfluencers());
+  const found = state.leads
+    .filter(l => looksLikeCollab(l) && !seen(l))
+    .map(l => ({ lead: l, handle: handleFrom(l.name) }))
+    .filter(x => x.handle);
+
+  if (!found.length) {
+    openModal({
+      title: 'משיכה מהלידים',
+      body: `<p class="modal__text">לא נמצאו לידים שרשום עליהם שת״פ, שיתוף פעולה או משפיען.<br>
+        אם יש כאלה אצלך – ודא שהמילה מופיעה בשם הליד או בהערות שלו, ונסה שוב.</p>`,
+      footer: '<button class="btn btn--primary" data-close>סגירה</button>',
+    });
+    return;
+  }
+
+  const body = `
+    <p class="modal__text">נמצאו <b>${fmtNum(found.length)}</b> לידים שנראים כמו שיתופי פעולה. בחר את מי להעביר לרשימת המשפיענים.</p>
+    <div class="pull-list">
+      ${found.map((x, i) => `
+        <label class="pull">
+          <input type="checkbox" checked data-i="${i}">
+          <span class="pull__body">
+            <b>${esc(x.lead.name)}</b>
+            <small class="muted">${esc(fmtPhone(x.lead.phone))}${x.lead.notes ? ' · ' + esc(x.lead.notes) : ''}</small>
+            <input class="input input--sm" data-handle="${i}" value="${esc(x.handle)}" dir="ltr" placeholder="שם משתמש באינסטגרם" aria-label="שם משתמש">
+          </span>
+        </label>`).join('')}
+    </div>
+    <label class="switch pull__opt"><input type="checkbox" data-remove checked><span>גם להוציא אותם מהפייפליין (יסומנו כ"לא רלוונטי", אפשר להחזיר)</span></label>
+    <p class="field__hint">שם המשתמש הוא מה שמקשר משפיען ללידים שהוא מביא – אפשר לתקן אותו כאן או אחר כך.</p>`;
+
+  const m = openModal({
+    title: 'משיכה מהלידים',
+    wide: true,
+    body,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" data-go>העבר למשפיענים</button>`,
+  });
+
+  m.el.querySelector('[data-go]').addEventListener('click', () => {
+    const remove = m.el.querySelector('[data-remove]').checked;
+    const picked = [...m.el.querySelectorAll('[data-i]')].filter(c => c.checked).map(c => Number(c.dataset.i));
+    if (!picked.length) { toast('לא נבחר אף אחד', 'warn'); return; }
+
+    const added = store.saveInfluencers(picked.map(i => ({
+      handle: m.el.querySelector(`[data-handle="${i}"]`).value,
+      name: found[i].lead.name.replace(COLLAB_RE, '').trim(),
+      phone: found[i].lead.phone,
+      notes: found[i].lead.notes,
+      status: 'wishlist',
+    })));
+
+    if (remove) picked.forEach(i => store.markLost(found[i].lead.id, 'irrelevant', 'הועבר לרשימת המשפיענים'));
+
+    m.close();
+    toast(added.length
+      ? `${fmtNum(added.length)} עברו למשפיענים${remove ? ' והוצאו מהפייפליין' : ''}`
+      : 'כולם כבר היו ברשימה', added.length ? 'good' : 'warn');
   });
 }

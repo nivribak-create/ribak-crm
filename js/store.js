@@ -277,6 +277,7 @@ export function saveInfluencer(inf) {
     id: inf.id || uid(),
     handle: String(inf.handle || '').trim().replace(/^@/, ''),
     name: String(inf.name || '').trim(),
+    phone: String(inf.phone || '').trim(),
     status: inf.status || 'wishlist',
     followers: String(inf.followers || '').trim(),
     notes: String(inf.notes || '').trim(),
@@ -288,6 +289,30 @@ export function saveInfluencer(inf) {
   const next = i >= 0 ? list.map(x => (x.id === clean.id ? clean : x)) : [clean, ...list];
   commit(state.leads, { ...state.settings, influencers: next }, { settings: true });
   return clean;
+}
+
+// Adding several at once (the "pull them out of the leads" flow) writes a
+// single settings update instead of one per person.
+export function saveInfluencers(list) {
+  const existing = getInfluencers();
+  const taken = new Set(existing.map(x => x.handle.toLowerCase()));
+  const t = nowIso();
+  const added = [];
+  for (const inf of list) {
+    const handle = String(inf.handle || '').trim().replace(/^@/, '');
+    if (!handle || taken.has(handle.toLowerCase())) continue;
+    taken.add(handle.toLowerCase());
+    added.push({
+      id: uid(), handle,
+      name: String(inf.name || '').trim(),
+      phone: String(inf.phone || '').trim(),
+      status: inf.status || 'wishlist',
+      followers: '', notes: String(inf.notes || '').trim(),
+      createdAt: t, updatedAt: t,
+    });
+  }
+  if (added.length) commit(state.leads, { ...state.settings, influencers: [...added, ...existing] }, { settings: true });
+  return added;
 }
 
 export function setInfluencerStatus(id, status) {
