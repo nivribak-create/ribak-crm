@@ -971,6 +971,22 @@ body.has-script { overflow: hidden; }
 .col__head { flex-wrap: wrap; }
 
 /* ==========================================================================
+   Dragging cards between columns
+   ========================================================================== */
+.board .card { touch-action: pan-y; }
+.board.is-dnd { cursor: grabbing; }
+.board.is-dnd .card { cursor: grabbing; }
+.card.is-dragging { opacity: .28; }
+.drag-ghost {
+  position: fixed; top: 0; inset-inline-start: 0; z-index: 60; pointer-events: none;
+  box-shadow: 0 8px 30px rgba(18, 32, 29, .3); opacity: .96;
+  transition: none; margin: 0;
+}
+.col.is-drop-target { background: var(--accent-soft); border-color: var(--accent); }
+.col.is-drop-target .col__head { background: var(--accent-soft); }
+.col.is-drop-target .col__body { outline: 2px dashed var(--accent); outline-offset: -6px; border-radius: var(--radius); }
+
+/* ==========================================================================
    Responsive
    ========================================================================== */
 @media (max-width: 1100px) {

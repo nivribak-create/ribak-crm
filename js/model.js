@@ -7,7 +7,7 @@
 
 export const STAGES = [
   { id: 'new',        label: 'ליד חדש',              short: 'חדש',      done: 'ליד חדש נכנס',       action: null },
-  { id: 'followup',   label: 'פולואפ – עדיין לא קיבל שיחה', short: 'פולואפ', done: 'עבר לפולואפ',    action: 'לא הצלחתי לתפוס' },
+  { id: 'followup',   label: 'פולואפ – קיבל שיחה ולא ענה', short: 'פולואפ', done: 'עבר לפולואפ',    action: 'לא ענה לשיחה' },
   { id: 'pitched',    label: 'בוצעה שיחת מכירה',     short: 'שיחת מכירה', done: 'בוצעה שיחת מכירה', action: 'ביצעתי שיחת מכירה' },
   { id: 'trial',      label: 'סגר שבוע ניסיון',      short: 'ניסיון',   done: 'נסגר שבוע ניסיון',   action: 'סגר שבוע ניסיון' },
   { id: 'delivered',  label: 'קיבל את המשלוח',       short: 'קיבל אוכל', done: 'קיבל את המשלוח',    action: 'קיבל את המשלוח' },
@@ -138,6 +138,7 @@ export const EVENT_LABELS = {
   advanced: 'התקדם לשלב',
   lost:     'סומן כאבוד',
   restored: 'הוחזר לפייפליין',
+  moved:    'הועבר לשלב',
   churned:  'המנוי הופסק',
   attempt:  'ניסיון ללא מענה',
   note:     'הערה',

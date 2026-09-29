@@ -1,7 +1,9 @@
 import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum } from '../util.js';
-import { actionButtons, handleAction, openDrawer } from '../lead.js';
-import { copyBtn } from '../ui.js';
+import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
+import { copyBtn, toast } from '../ui.js';
+import { installDrag } from '../dnd.js';
+import * as store from '../store.js';
 
 const ui = {
   q: '',
@@ -59,6 +61,22 @@ export function render(root, state) {
   root.onkeydown = e => {
     if (e.key === 'Enter' && e.target.classList.contains('card')) openDrawer(e.target.dataset.id);
   };
+
+  installDrag(root.querySelector('.board'), { onDrop: drop });
+}
+
+// Dropping onto the lost column needs a reason, and dropping a lost lead
+// back onto a stage puts it back in play.
+function drop(id, stage) {
+  const lead = store.getLead(id);
+  if (!lead) return;
+  if (stage === '__lost') {
+    if (lead.status === 'lost' || lead.status === 'churned') return;
+    openLostDialog(lead);
+    return;
+  }
+  store.moveToStage(id, stage);
+  toast(`${lead.name} → ${STAGE_BY_ID[stage].label}`);
 }
 
 // A lead you have already touched today has had its turn, so it sinks to
@@ -84,7 +102,7 @@ function column({ stage, leads }, today) {
   const idx = stageIndex(stage.id);
   const isFinal = stage.id === FINAL_STAGE;
   const waiting = leads.filter(l => !handledToday(l, today)).length;
-  return `<section class="col" style="--stage:${idx}" aria-label="${esc(stage.label)}">
+  return `<section class="col" style="--stage:${idx}" data-stage="${stage.id}" aria-label="${esc(stage.label)}">
     <header class="col__head">
       <span class="col__dot"></span>
       <h2 class="col__title">${esc(stage.label)}</h2>
@@ -127,7 +145,7 @@ function card(l, today, isFinal) {
 }
 
 function lostColumn(leads) {
-  return `<section class="col col--lost" aria-label="אבודים">
+  return `<section class="col col--lost" data-stage="__lost" aria-label="אבודים">
     <header class="col__head">
       <span class="col__dot"></span>
       <h2 class="col__title">אבדו / הפסיקו</h2>

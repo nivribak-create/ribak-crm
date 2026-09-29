@@ -233,6 +233,22 @@ export function advanceLead(id, toStage = null) {
   });
 }
 
+// Dragging a card puts it wherever it was dropped — forwards, backwards,
+// or out of the lost pile — which plain advancing deliberately refuses.
+export function moveToStage(id, stageId) {
+  if (!STAGES.some(s => s.id === stageId)) return;
+  patchLead(id, l => {
+    const forward = stageIndex(stageId) > stageIndex(l.stage);
+    if (l.stage === stageId && l.status === 'active') return;
+    l.stage = stageId;
+    l.status = stageId === FINAL_STAGE ? 'won' : 'active';
+    l.lostReason = null;
+    l.lostAt = null;
+    if (forward) { l.attempts = 0; l.nextAt = null; }
+    l.events.push({ t: nowIso(), type: forward ? 'advanced' : 'moved', stage: stageId });
+  });
+}
+
 export function markLost(id, reasonId, note = '') {
   patchLead(id, l => {
     const t = nowIso();

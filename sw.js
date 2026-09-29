@@ -1,11 +1,11 @@
 // Network-first service worker: the app always tries the network, and
 // falls back to the last cached copy when offline. Bump VERSION on deploy
 // to drop stale caches.
-const VERSION = 'ribak-crm-v11';
+const VERSION = 'ribak-crm-v12';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest', './icons/icon.svg',
   './js/app.js', './js/model.js', './js/util.js', './js/store.js', './js/analytics.js', './js/sample.js',
-  './js/charts.js', './js/ui.js', './js/lead.js', './js/api.js', './js/import.js', './js/scripts.js', './js/callscript.js', './js/views/dashboard.js', './js/views/pipeline.js', './js/views/leads.js', './js/views/triage.js', './js/views/influencers.js',
+  './js/charts.js', './js/ui.js', './js/lead.js', './js/api.js', './js/import.js', './js/dnd.js', './js/scripts.js', './js/callscript.js', './js/views/dashboard.js', './js/views/pipeline.js', './js/views/leads.js', './js/views/triage.js', './js/views/influencers.js',
 ];
 
 self.addEventListener('install', e => {

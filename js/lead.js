@@ -311,6 +311,7 @@ function renderDrawer() {
     if (ev.type === 'advanced') text = STAGE_BY_ID[ev.stage]?.done || text;
     if (ev.type === 'lost') text = `סומן כאבוד · ${reasonLabel(ev.reason)}`;
     if (ev.type === 'churned') text = `המנוי הופסק · ${reasonLabel(ev.reason)}`;
+    if (ev.type === 'moved') text = `הועבר ל${STAGE_BY_ID[ev.stage]?.label || ''}`;
     if (ev.type === 'attempt') text = `ניסיון ${ev.channel === 'whatsapp' ? 'בוואטסאפ' : 'טלפוני'} ללא מענה`;
     if (ev.type === 'note') text = ev.text;
     return `<li class="tl__item tl__item--${ev.type}">
