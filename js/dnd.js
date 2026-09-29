@@ -115,6 +115,7 @@ function cleanup() {
   board?.classList.remove('is-dnd');
   document.body.classList.remove('is-dragging-card');
   drag = null;
+  document.dispatchEvent(new Event('ribak:idle'));
 }
 
 function wire() {

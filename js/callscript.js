@@ -41,6 +41,7 @@ export function closeScript() {
   setTimeout(() => dying.remove(), 160);
   host = null; state = null;
   document.removeEventListener('keydown', onKey);
+  document.dispatchEvent(new Event('ribak:idle'));
 }
 
 function firstUnfinished() {

@@ -3,6 +3,7 @@ import { generateSample } from './sample.js';
 import { openLeadForm, openDrawer, closeDrawer } from './lead.js';
 import { installTooltips, toast, confirmDialog, openModal, copyToClipboard } from './ui.js';
 import { downloadText, fmtNum, esc } from './util.js';
+import { renderInto, uiIdle } from './render.js';
 import * as dashboard from './views/dashboard.js';
 import * as pipeline from './views/pipeline.js';
 import * as leads from './views/leads.js';
@@ -45,6 +46,12 @@ function show(view) {
   window.scrollTo(0, 0);
   VIEWS[view].render(main, store.getState());
 }
+
+const repaint = state => renderInto(main, () => VIEWS[current].render(main, state));
+
+// A drag or a call script holds renders back; this lets them through the
+// moment the screen is free again.
+document.addEventListener('ribak:idle', () => uiIdle(main));
 
 window.addEventListener('hashchange', route);
 
@@ -119,7 +126,7 @@ store.subscribe(state => {
   if (!state.ready) return;
   if (isLocked(state)) { if (current !== null || !main.querySelector('.gate')) renderGate(state); return; }
   document.body.classList.remove('is-locked');
-  if (current) VIEWS[current].render(main, state); else route();
+  if (current) repaint(state); else route();
   updateChrome(state);
   if (state.lastError) { toast(state.lastError, 'warn'); store.clearError(); }
 });
@@ -274,7 +281,11 @@ main.innerHTML = '<div class="empty">טוען…</div>';
   route();
 
   if (state.mode === 'remote') {
-    const quiet = () => document.body.classList.contains('has-modal') || document.body.classList.contains('has-drawer');
+    const quiet = () => document.body.classList.contains('has-modal')
+      || document.body.classList.contains('has-drawer')
+      || document.body.classList.contains('has-script')
+      || document.body.classList.contains('is-dragging-card')
+      || document.activeElement?.matches?.('input, textarea, select');
     setInterval(() => { if (!quiet()) store.refresh(); }, 45000);
     window.addEventListener('focus', () => { if (!quiet()) store.refresh(); });
   }

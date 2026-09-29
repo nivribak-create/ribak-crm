@@ -4,6 +4,7 @@ import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
 import { SALES_SCRIPT, visibleFields } from './scripts.js';
+import { preserve } from './render.js';
 import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso } from './util.js';
 
 // ---- add / edit ---------------------------------------------------------
@@ -290,8 +291,12 @@ function scriptPanel(lead) {
 }
 
 function renderDrawer() {
-  const lead = store.getLead(drawerId);
   const panel = drawerEl.querySelector('.drawer__panel');
+  preserve(panel, () => paintDrawer(panel));
+}
+
+function paintDrawer(panel) {
+  const lead = store.getLead(drawerId);
   if (!lead) { panel.innerHTML = `<div class="empty">הליד לא נמצא</div>`; return; }
   const idx = stageIndex(lead.stage);
   const days = daysBetween(lead.createdAt, new Date());
