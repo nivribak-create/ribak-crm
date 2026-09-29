@@ -61,7 +61,20 @@ export function render(root, state) {
   };
 }
 
+// A lead you have already touched today has had its turn, so it sinks to
+// the bottom of its column and the top of the board is always the work
+// still waiting.
+function handledToday(l, today) {
+  const last = l.events[l.events.length - 1];
+  if (!last || last.type === 'created' || last.type === 'imported') return false;
+  return daysBetween(last.t, today) === 0;
+}
+
 function sortKey(l, today) {
+  if (handledToday(l, today)) {
+    // among those, the one touched longest ago comes first
+    return 10000 - (Date.now() - new Date(l.events[l.events.length - 1].t)) / 3.6e6;
+  }
   // overdue first, then due today, then oldest in stage
   if (l.nextAt) { const d = daysBetween(today, l.nextAt); if (d <= 0) return d - 1000; return d; }
   return 500 - daysBetween(l.createdAt, today) / 1000;
@@ -70,11 +83,13 @@ function sortKey(l, today) {
 function column({ stage, leads }, today) {
   const idx = stageIndex(stage.id);
   const isFinal = stage.id === FINAL_STAGE;
+  const waiting = leads.filter(l => !handledToday(l, today)).length;
   return `<section class="col" style="--stage:${idx}" aria-label="${esc(stage.label)}">
     <header class="col__head">
       <span class="col__dot"></span>
       <h2 class="col__title">${esc(stage.label)}</h2>
       <span class="col__count">${fmtNum(leads.length)}</span>
+      ${waiting !== leads.length ? `<span class="col__waiting" title="עוד לא טופלו היום">${fmtNum(waiting)} ממתינים</span>` : ''}
     </header>
     <div class="col__body">
       ${leads.length ? leads.map(l => card(l, today, isFinal)).join('') : `<div class="col__empty">${isFinal ? 'עוד לא נסגרו מנויים' : 'ריק'}</div>`}
@@ -87,7 +102,8 @@ function card(l, today, isFinal) {
   const inStage = since ? daysBetween(since.t, today) : 0;
   const due = l.nextAt ? daysBetween(today, l.nextAt) : null;
   const dueCls = due == null ? '' : due < 0 ? 'is-late' : due === 0 ? 'is-today' : '';
-  return `<article class="card ${isFinal ? 'card--won' : ''} ${dueCls}" data-id="${l.id}" tabindex="0">
+  const done = handledToday(l, today);
+  return `<article class="card ${isFinal ? 'card--won' : ''} ${dueCls} ${done ? 'is-handled' : ''}" data-id="${l.id}" tabindex="0">
     <div class="card__top">
       <b class="card__name">${esc(l.name)}</b>
       <span class="card__source">${esc(l.source)}</span>
@@ -103,6 +119,7 @@ function card(l, today, isFinal) {
       <span class="muted">${inStage === 0 ? 'היום' : `${inStage} ${inStage === 1 ? 'יום' : 'ימים'} בשלב`}</span>
       ${l.attempts ? `<span class="tag tag--warn" title="ניסיונות ללא מענה">${l.attempts} ללא מענה</span>` : ''}
       ${l.nextAt ? `<span class="tag ${due < 0 ? 'tag--lost' : due === 0 ? 'tag--warn' : ''}">${esc(dueLabel(l.nextAt))}</span>` : ''}
+      ${done ? '<span class="tag tag--done">✓ טופל היום</span>' : ''}
     </div>
     ${l.notes ? `<p class="card__notes">${esc(l.notes)}</p>` : ''}
     ${isFinal ? '' : `<div class="card__actions">${actionButtons(l, { compact: true })}</div>`}

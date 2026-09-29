@@ -12,12 +12,13 @@ const INFLUENCERS = ['@noa_fit', '@yossi_eats', '@tal_trains', '@shira.balance']
 // Chance of making it out of each stage, keyed by the stage itself. After
 // the first delivery the customer either takes the subscription straight
 // away or orders one more single week first.
-const PASS = { new: 0.58, pitched: 0.48, trial: 0.97, delivered: 0.62, repeat: 0.55 };
-const GAP_DAYS = { new: 1.4, pitched: 1.8, trial: 5, delivered: 2.5, repeat: 7 };
+const PASS = { new: 0.82, followup: 0.62, pitched: 0.48, trial: 0.97, delivered: 0.62, repeat: 0.55 };
+const GAP_DAYS = { new: 0.5, followup: 1.6, pitched: 1.8, trial: 5, delivered: 2.5, repeat: 7 };
 const STRAIGHT_TO_SUB = 0.6;  // of those who continue after the first delivery
 // Reasons a lead is lost when stuck on each stage
 const LOST_AT = {
-  new:       [['no_answer', 10], ['invalid', 4], ['irrelevant', 3], ['out_of_area', 3]],
+  new:       [['invalid', 5], ['irrelevant', 4], ['out_of_area', 3], ['no_answer', 2]],
+  followup:  [['no_answer', 14], ['out_of_area', 3], ['irrelevant', 2]],
   pitched:   [['price', 7], ['thinking', 6], ['delivery_time', 3], ['food_type', 3], ['no_answer', 3]],
   trial:     [['no_answer', 3], ['price', 2]],
   delivered: [['price', 5], ['taste', 3], ['variety', 3], ['no_need', 4], ['no_answer', 3]],
@@ -60,11 +61,19 @@ export function generateSample(count = 140, days = 90, seed = 20260911) {
       const tNext = new Date(t.getTime() + gap * 86400000);
       if (tNext > now) { // still in progress on this stage
         if (r() < 0.5) nextAt = isoDay(addDays(now, Math.floor(r() * 4) - 1));
-        if (r() < 0.35) { attempts = 1 + Math.floor(r() * 2); for (let a = 0; a < attempts; a++) events.push({ t: new Date(t.getTime() + (a + 1) * 0.6 * 86400000).toISOString(), type: 'attempt', stage, channel: 'call' }); }
+        // attempts sit between arriving at this stage and now — never ahead
+        // of it, or every lead would look like it was just handled
+        if (r() < 0.35) {
+          attempts = 1 + Math.floor(r() * 2);
+          const span = Math.max(0, now - t) / (attempts + 1);
+          for (let a = 0; a < attempts; a++) {
+            events.push({ t: new Date(t.getTime() + span * (a + 1)).toISOString(), type: 'attempt', stage, channel: 'call' });
+          }
+        }
         break;
       }
       // occasional unanswered attempt before a call connects
-      if ((stage === 'new' || stage === 'pitched') && r() < 0.3) {
+      if ((stage === 'followup' || stage === 'pitched') && r() < 0.3) {
         events.push({ t: new Date(t.getTime() + gap * 0.5 * 86400000).toISOString(), type: 'attempt', stage, channel: 'call' });
       }
       if (r() < PASS[stage]) {

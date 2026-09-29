@@ -290,7 +290,7 @@ function finish(outcome) {
   store.finishScript(leadId, scriptId, summarize());
 
   // Having pitched is progress even when nothing was sold.
-  if (lead.stage === 'new') store.advanceLead(leadId, 'pitched');
+  if (['new', 'followup'].includes(lead.stage)) store.advanceLead(leadId, 'pitched');
   closeScript();
 
   const after = store.getLead(leadId);

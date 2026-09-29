@@ -148,11 +148,11 @@ export function openToInfluencer(lead) {
 }
 
 // ---- shared actions -----------------------------------------------------
-export function advance(lead) {
-  const next = nextStage(lead.stage);
-  if (!next) return;
-  store.advanceLead(lead.id);
-  toast(next.id === FINAL_STAGE ? `🎉 ${lead.name} סגר מנוי!` : `${lead.name} → ${next.label}`, next.id === FINAL_STAGE ? 'good' : '');
+export function advance(lead, to = null) {
+  const target = to ? STAGE_BY_ID[to] : nextStage(lead.stage);
+  if (!target) return;
+  store.advanceLead(lead.id, target.id);
+  toast(target.id === FINAL_STAGE ? `🎉 ${lead.name} סגר מנוי!` : `${lead.name} → ${target.label}`, target.id === FINAL_STAGE ? 'good' : '');
 }
 export function attempt(lead) {
   store.logAttempt(lead.id, 'call');
@@ -182,14 +182,15 @@ export function actionButtons(lead, { compact = false } = {}) {
       <button class="btn btn--sm btn--ghost btn--lost" data-act="churn" data-id="${lead.id}" title="המנוי הופסק">ביטל מנוי</button>`;
   }
   const next = nextStage(lead.stage);
-  const canAttempt = ['new', 'pitched', 'delivered', 'repeat'].includes(lead.stage);
+  const canAttempt = ['new', 'followup', 'pitched', 'delivered', 'repeat'].includes(lead.stage);
   // Before the trial is paid for, the sales call is the thing to do next.
-  const needsScript = ['new', 'pitched'].includes(lead.stage);
+  const needsScript = ['new', 'followup', 'pitched'].includes(lead.stage);
   const doneScript = Boolean(lead.scripts?.sales?.completedAt);
   if (needsScript) {
     return `
       <button class="btn btn--sm btn--primary" data-act="script" data-id="${lead.id}">${doneScript ? '↻ פתח תסריט' : '▶ שיחת מכירה'}</button>
-      ${doneScript ? `<button class="btn btn--sm" data-act="advance" data-id="${lead.id}" title="${esc(next.label)}">✓ ${esc(next.action)}</button>` : ''}
+      ${doneScript && lead.stage !== 'pitched' ? `<button class="btn btn--sm" data-act="advance" data-to="pitched" data-id="${lead.id}">✓ בוצעה שיחת מכירה</button>` : ''}
+      ${doneScript && lead.stage === 'pitched' ? `<button class="btn btn--sm" data-act="advance" data-to="trial" data-id="${lead.id}">✓ סגר שבוע ניסיון</button>` : ''}
       <button class="btn btn--sm btn--ghost" data-act="attempt" data-id="${lead.id}" title="נרשם ניסיון, ננסה שוב מחר">לא ענה</button>
       <button class="btn btn--sm btn--ghost btn--lost" data-act="lost" data-id="${lead.id}" title="סימון כאבוד">✕${compact ? '' : ' אבד'}</button>`;
   }
@@ -211,7 +212,7 @@ export function handleAction(e) {
   if (!lead) return false;
   e.stopPropagation();
   switch (b.dataset.act) {
-    case 'advance': advance(lead); break;
+    case 'advance': advance(lead, b.dataset.to || null); break;
     case 'attempt': attempt(lead); break;
     case 'lost': openLostDialog(lead); break;
     case 'churn': openChurnDialog(lead); break;

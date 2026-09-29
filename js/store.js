@@ -270,6 +270,12 @@ export function logAttempt(id, channel = 'call') {
     l.attempts = (l.attempts || 0) + 1;
     l.nextAt = isoDay(addDays(new Date(), 1));
     l.events.push({ t: nowIso(), type: 'attempt', stage: l.stage, channel });
+    // A lead nobody has tried to reach and one that isn't picking up are
+    // different problems, so the first failed attempt moves it along.
+    if (l.stage === 'new') {
+      l.stage = 'followup';
+      l.events.push({ t: nowIso(), type: 'advanced', stage: 'followup' });
+    }
   });
 }
 
