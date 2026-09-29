@@ -4,7 +4,7 @@
 // the last 30 days, how many closed".
 
 import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf } from './model.js';
-import { dayStart, addDays, daysBetween, pct1, nextDeadline } from './util.js';
+import { dayStart, addDays, daysBetween, pct1, nextDeadline, isoDay } from './util.js';
 
 export const RANGES = [
   { id: '7',   label: '7 ימים',  days: 7 },
@@ -21,6 +21,26 @@ export function filterLeads(leads, { range = 'all', source = '' } = {}) {
     if (source && l.source !== source) return false;
     return true;
   });
+}
+
+// What a day of selling looked like, counted off the timeline rather than
+// off the leads' current state — a lead that was called today and closed
+// tomorrow belongs to both days.
+export function dayReport(leads, date = new Date()) {
+  const day = isoDay(date);
+  let dials = 0, fullCalls = 0, trialCloses = 0, subCloses = 0;
+  for (const l of leads) {
+    const today = l.events.filter(e => !e.imported && isoDay(e.t) === day);
+    if (!today.length) continue;
+    // one conversation per lead per day, however it was recorded
+    const hadCall = today.some(e => e.type === 'script' || (e.type === 'advanced' && e.stage === 'pitched'));
+    const noAnswer = today.filter(e => e.type === 'attempt').length;
+    if (hadCall) fullCalls++;
+    dials += noAnswer + (hadCall ? 1 : 0);
+    trialCloses += today.filter(e => e.type === 'advanced' && e.stage === 'trial').length;
+    subCloses += today.filter(e => e.type === 'advanced' && e.stage === 'subscribed').length;
+  }
+  return { dials, fullCalls, trialCloses, subCloses, closes: trialCloses + subCloses };
 }
 
 export function computeAnalytics(allLeads, filters = {}) {
@@ -140,6 +160,8 @@ export function computeAnalytics(allLeads, filters = {}) {
     waitingDelivery: allLeads.filter(l => l.status === 'active' && l.stage === 'trial').length,
   };
   return {
+    today: dayReport(allLeads, new Date()),
+    yesterday: dayReport(allLeads, addDays(new Date(), -1)),
     leads, total: n, sold, won, churned, lost, active, outcomes,
     convTotal: pct1(sold, n),
     convTrial: pct1(sold, trialReached),
