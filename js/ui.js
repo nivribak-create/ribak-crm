@@ -100,6 +100,38 @@ export function installTooltips(root = document) {
   });
 }
 
+// ---- copying ------------------------------------------------------------
+// Phone numbers are the thing most often needed somewhere else — a
+// WhatsApp broadcast, a note, a dialler — so every number gets a button.
+// Synchronous on purpose: the clipboard is only open to us while the
+// click that asked for it is still being handled, and awaiting anything
+// first gives that up. The textarea route works everywhere, so it runs
+// first and the modern API follows as a quiet upgrade.
+export function copyToClipboard(text) {
+  let ok = false;
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    const selection = document.getSelection();
+    const previous = selection.rangeCount ? selection.getRangeAt(0) : null;
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    ok = document.execCommand('copy');
+    ta.remove();
+    if (previous) { selection.removeAllRanges(); selection.addRange(previous); }
+  } catch { ok = false; }
+  try { navigator.clipboard?.writeText(text).then(() => {}, () => {}); ok = true; } catch { /* keep the fallback's answer */ }
+  return ok;
+}
+
+const COPY_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`;
+
+export const copyBtn = (text, label = 'העתקת המספר') =>
+  `<button class="copy" data-copy="${esc(text)}" title="${esc(label)}" aria-label="${esc(label)}">${COPY_ICON}</button>`;
+
 // ---- form helpers -------------------------------------------------------
 export const field = (label, control, hint = '') => `
   <label class="field">

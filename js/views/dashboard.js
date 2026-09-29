@@ -3,6 +3,7 @@ import { computeAnalytics, RANGES } from '../analytics.js';
 import { funnelRows, hbars, stackedColumns, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime } from '../util.js';
 import { handleAction, openDrawer } from '../lead.js';
+import { copyBtn } from '../ui.js';
 
 const ui = {
   range: sessionStorage.getItem('ribak:range') || '90',
@@ -306,6 +307,7 @@ function dueList(leads) {
       <span class="tag ${late ? 'tag--lost' : 'tag--warn'}">${dueLabel(l.nextAt)}</span>
       <div class="due__contact">
         <a class="contact contact--tel" href="${telLink(l.phone)}" onclick="event.stopPropagation()">📞</a>
+        ${copyBtn(l.phone)}
         <a class="contact contact--wa" href="${waLink(l.phone)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">וואטסאפ</a>
       </div>
     </li>`;

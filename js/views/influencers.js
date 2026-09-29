@@ -5,7 +5,7 @@
 
 import { INFLUENCER_STATUSES, INFLUENCER_STATUS_BY_ID, INFLUENCER_SOURCE, everSubscribed, stageIndex, COLLAB_RE, looksLikeCollab, handleFrom } from '../model.js';
 import * as store from '../store.js';
-import { openModal, confirmDialog, toast, field, formData } from '../ui.js';
+import { openModal, confirmDialog, toast, field, formData, copyBtn } from '../ui.js';
 import { esc, fmtNum, pct1, fmtPhone, telLink, waLink, normPhone } from '../util.js';
 
 // Someone already moved across may have been given a different handle, so
@@ -104,7 +104,10 @@ function card(inf, s) {
     </div>
     ${inf.name ? `<div class="card__row muted">${esc(inf.name)}</div>` : ''}
     ${inf.phone ? `<div class="card__meta">
-      <a class="card__phone" href="${telLink(inf.phone)}">${esc(fmtPhone(inf.phone))}</a>
+      <span class="card__phone-wrap">
+        <a class="card__phone" href="${telLink(inf.phone)}">${esc(fmtPhone(inf.phone))}</a>
+        ${copyBtn(inf.phone)}
+      </span>
       <a class="card__wa" href="${waLink(inf.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
     </div>` : ''}
     ${s ? `

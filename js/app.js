@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import { generateSample } from './sample.js';
 import { openLeadForm, openDrawer, closeDrawer } from './lead.js';
-import { installTooltips, toast, confirmDialog, openModal } from './ui.js';
+import { installTooltips, toast, confirmDialog, openModal, copyToClipboard } from './ui.js';
 import { downloadText, fmtNum, esc } from './util.js';
 import * as dashboard from './views/dashboard.js';
 import * as pipeline from './views/pipeline.js';
@@ -136,6 +136,26 @@ function updateChrome(state) {
 }
 
 // ---- global controls ----------------------------------------------------
+// Anything anywhere can offer a copy button just by carrying data-copy.
+// Captured on the way down so the card or row underneath never sees the
+// click and opens itself.
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-copy]');
+  if (!c) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const text = c.dataset.copy || '';
+  if (!text) return;
+  // Copy while the click is still the current user gesture — browsers
+  // refuse the clipboard once an await has let go of it.
+  const ok = copyToClipboard(text);
+  if (!ok) { toast('הדפדפן חסם את ההעתקה', 'warn'); return; }
+  c.classList.add('is-copied');
+  setTimeout(() => c.classList.remove('is-copied'), 1100);
+  const n = text.split('\n').filter(Boolean).length;
+  toast(n > 1 ? `${fmtNum(n)} מספרים הועתקו` : 'המספר הועתק');
+}, true);
+
 document.addEventListener('click', e => {
   const g = e.target.closest('[data-global]');
   if (!g) return;

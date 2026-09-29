@@ -1,7 +1,7 @@
 // Lead dialogs and the detail drawer — shared by every view.
 import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom } from './model.js';
 import * as store from './store.js';
-import { openModal, confirmDialog, toast, field, select, formData } from './ui.js';
+import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
 import { SALES_SCRIPT, visibleFields } from './scripts.js';
 import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso } from './util.js';
@@ -333,6 +333,7 @@ function renderDrawer() {
     </header>
     <div class="drawer__contact">
       <a class="contact contact--tel" href="${telLink(lead.phone)}">📞 ${esc(fmtPhone(lead.phone))}</a>
+      ${copyBtn(lead.phone)}
       <a class="contact contact--wa" href="${waLink(lead.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
       <button class="btn btn--sm btn--ghost" data-act="edit" data-id="${lead.id}">עריכה</button>
     </div>

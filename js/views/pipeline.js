@@ -1,6 +1,7 @@
 import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum } from '../util.js';
 import { actionButtons, handleAction, openDrawer } from '../lead.js';
+import { copyBtn } from '../ui.js';
 
 const ui = {
   q: '',
@@ -92,7 +93,10 @@ function card(l, today, isFinal) {
       <span class="card__source">${esc(l.source)}</span>
     </div>
     <div class="card__meta">
-      <a class="card__phone" href="${telLink(l.phone)}">${esc(fmtPhone(l.phone))}</a>
+      <span class="card__phone-wrap">
+        <a class="card__phone" href="${telLink(l.phone)}">${esc(fmtPhone(l.phone))}</a>
+        ${copyBtn(l.phone)}
+      </span>
       <a class="card__wa" href="${waLink(l.phone)}" target="_blank" rel="noopener" title="פתח בוואטסאפ">וואטסאפ</a>
     </div>
     <div class="card__row">

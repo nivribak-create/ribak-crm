@@ -941,6 +941,24 @@ body.has-script { overflow: hidden; }
 }
 
 /* ==========================================================================
+   Copy buttons — every phone number is one click from the clipboard
+   ========================================================================== */
+.copy {
+  display: inline-grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
+  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: var(--muted); cursor: pointer; vertical-align: middle;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.copy:hover { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
+.copy.is-copied { background: var(--accent-soft); color: var(--accent-soft-ink); border-color: var(--accent); }
+.copy.is-copied svg { display: none; }
+.copy.is-copied::after { content: '\2713'; font-size: 14px; font-weight: 700; }
+
+.card__phone-wrap { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.td-phone .copy { margin-inline: 2px; }
+.toolbar [data-copy-all][disabled] { opacity: .45; cursor: default; }
+
+/* ==========================================================================
    Responsive
    ========================================================================== */
 @media (max-width: 1100px) {

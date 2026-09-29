@@ -7,7 +7,7 @@
 import { SCRIPTS, visibleFields, isVisible, cityOutOfArea } from './scripts.js';
 import * as store from './store.js';
 import { esc, fmtPhone, telLink, waLink, debounce, fmtNum } from './util.js';
-import { toast } from './ui.js';
+import { toast, copyBtn } from './ui.js';
 import { openLostDialog, attempt } from './lead.js';
 
 let host = null;
@@ -76,6 +76,7 @@ function build() {
         <b>${esc(lead.name)}</b>
         <span class="callview__tags">
           <a class="contact contact--tel" href="${telLink(lead.phone)}">${esc(fmtPhone(lead.phone))}</a>
+          ${copyBtn(lead.phone)}
           <a class="contact contact--wa" href="${waLink(lead.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
         </span>
       </div>

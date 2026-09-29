@@ -1,6 +1,7 @@
 import { STAGES, STAGE_BY_ID, SOURCES, STATUS, OUTCOMES, OUTCOME_BY_ID, outcomeOf, reasonLabel, stageIndex } from '../model.js';
 import { esc, fmtPhone, fmtDate, waLink, telLink, daysBetween, dueLabel, fmtNum, downloadText } from '../util.js';
 import { handleAction, openDrawer } from '../lead.js';
+import { copyBtn } from '../ui.js';
 
 const ui = { q: '', outcome: '', stage: '', source: '', sort: 'createdAt', dir: -1 };
 
@@ -28,6 +29,7 @@ export function render(root, state) {
         ${SOURCES.map(s => `<option value="${esc(s)}" ${ui.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
       </select>
       <span class="toolbar__note muted" data-count></span>
+      <button class="btn btn--sm" data-copy-all>העתק מספרים</button>
       <button class="btn btn--sm" data-export>ייצוא CSV</button>
     </div>
     <div class="table-wrap table-wrap--leads"><table class="table table--leads">
@@ -38,9 +40,14 @@ export function render(root, state) {
     </table></div>`;
 
   const body = root.querySelector('[data-body]');
+  const copyAll = root.querySelector('[data-copy-all]');
   const draw = () => {
     const rows = filtered(state.leads);
     root.querySelector('[data-count]').textContent = `${fmtNum(rows.length)} לידים`;
+    // carries whatever the filters currently show, one number per line
+    copyAll.dataset.copy = rows.map(l => l.phone).filter(Boolean).join('\n');
+    copyAll.disabled = !rows.length;
+    copyAll.textContent = rows.length ? `העתק ${fmtNum(rows.length)} מספרים` : 'העתק מספרים';
     body.innerHTML = rows.length ? rows.map(row).join('') : `<tr><td colspan="7"><div class="empty">לא נמצאו לידים שמתאימים לסינון</div></td></tr>`;
   };
   draw();
@@ -92,7 +99,11 @@ function row(l) {
   const status = `<span class="tag tag--${cls}"${l.lostReason ? ` title="${esc(reasonLabel(l.lostReason))}"` : ''}>${esc(OUTCOME_BY_ID[oc].label)}</span>`;
   return `<tr data-id="${l.id}" tabindex="0">
     <td class="td-name"><b>${esc(l.name)}</b>${l.status === 'lost' ? `<small class="muted">${esc(reasonLabel(l.lostReason))}</small>` : l.notes ? `<small class="muted">${esc(l.notes)}</small>` : ''}</td>
-    <td class="td-phone"><a href="${telLink(l.phone)}">${esc(fmtPhone(l.phone))}</a> <a class="wa-mini" href="${waLink(l.phone)}" target="_blank" rel="noopener" title="וואטסאפ">וואטסאפ</a></td>
+    <td class="td-phone">
+      <a href="${telLink(l.phone)}">${esc(fmtPhone(l.phone))}</a>
+      ${copyBtn(l.phone)}
+      <a class="wa-mini" href="${waLink(l.phone)}" target="_blank" rel="noopener" title="וואטסאפ">וואטסאפ</a>
+    </td>
     <td>${esc(l.source)}</td>
     <td><span class="stage-chip" style="--c:var(--f${stageIndex(l.stage)})">${esc(STAGE_BY_ID[l.stage].short)}</span></td>
     <td>${status}</td>

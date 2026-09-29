@@ -7,7 +7,7 @@ import { STAGES, LOST_REASONS, SOURCES, INFLUENCER_SOURCE, UNKNOWN_SOURCE, reaso
 import * as store from '../store.js';
 import { readFile, readText } from '../import.js';
 import { esc, fmtNum, fmtPhone, waLink, telLink, plural } from '../util.js';
-import { toast } from '../ui.js';
+import { toast, copyBtn } from '../ui.js';
 
 const ui = {
   queue: [],        // rows waiting to be sorted
@@ -156,6 +156,7 @@ function renderPlay(root) {
             <input class="tcard__name" id="name" value="${esc(row.name)}" placeholder="ללא שם – אפשר להוסיף" autocomplete="off" aria-label="שם">
             <div class="tcard__contact">
               <a class="contact contact--tel" href="${telLink(row.phone)}">${esc(fmtPhone(row.phone))}</a>
+              ${copyBtn(row.phone)}
               <a class="contact contact--wa" href="${waLink(row.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
             </div>
           </div>
