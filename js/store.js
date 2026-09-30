@@ -6,7 +6,7 @@
 // consistent in both modes.
 
 import { STAGES, stageIndex, nextStage, FINAL_STAGE, LEGACY_STAGES, LEGACY_REASONS, LEGACY_SOURCES, SOURCES, UNKNOWN_SOURCE, STATUSES } from './model.js';
-import { uid, nowIso, isoDay, addDays, normPhone } from './util.js';
+import { uid, nowIso, isoDay, addDays, normPhone, cleanPhone } from './util.js';
 import * as api from './api.js';
 
 const KEY = 'ribak-crm:v1';
@@ -163,7 +163,7 @@ export function addLead({ name, phone, source, notes = '', nextAt = null, create
   const lead = {
     id: uid(),
     name: name.trim(),
-    phone: phone.trim(),
+    phone: cleanPhone(phone),
     source: source || 'אחר',
     notes: notes.trim(),
     createdAt: t,
@@ -380,7 +380,7 @@ function normalizeLead(raw) {
   return {
     id: String(raw.id || uid()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || uid(),
     name: String(raw.name || '').trim() || 'ללא שם',
-    phone: String(raw.phone || '').trim(),
+    phone: cleanPhone(raw.phone),
     source,
     influencer: String(raw.influencer || '').trim(),
     owner: String(raw.owner || '').trim(),

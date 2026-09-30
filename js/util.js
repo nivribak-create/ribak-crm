@@ -47,7 +47,28 @@ export const dueLabel = iso => {
   return `בעוד ${d} ימים`;
 };
 
+// Numbers arrive pasted from WhatsApp and the iPhone contacts app, which
+// wrap them in invisible directional marks. Strip those, and everything
+// else that is not a digit, so the stored value is just the number.
+export const cleanPhone = p => String(p || '')
+  .replace(/[\u200e\u200f\u2066-\u2069\u202a-\u202e]/g, '')
+  .trim();
+
 export const normPhone = p => String(p || '').replace(/\D/g, '');
+
+// An Israeli mobile is 05x followed by seven digits. Landlines and a few
+// other shapes are allowed through with a warning rather than a refusal,
+// because there is always an exception.
+export const phoneProblem = raw => {
+  const d = normPhone(raw);
+  if (!d) return 'לא הוזן מספר';
+  if (d.length < 9) return `רק ${d.length} ספרות – מספר קצר מדי`;
+  if (d.length > 10) return `${d.length} ספרות – מספר ארוך מדי`;
+  if (d.startsWith('05') && d.length !== 10) return `מספר נייד צריך 10 ספרות, יש ${d.length}`;
+  if (!d.startsWith('0')) return 'מספר ישראלי מתחיל ב-0';
+  if (!/^05/.test(d)) return 'לא נראה כמו מספר נייד';
+  return null;
+};
 export const fmtPhone = p => {
   const d = normPhone(p);
   if (d.length === 10 && d.startsWith('05')) return `${d.slice(0, 3)}-${d.slice(3)}`;

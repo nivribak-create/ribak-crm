@@ -278,6 +278,7 @@ input[type="date"].input { font-variant-numeric: tabular-nums; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field__label { font-size: 13px; font-weight: 500; color: var(--ink-2); }
 .field__hint { font-size: 12.5px; color: var(--muted); }
+.field__warn { font-size: 12.5px; color: var(--warn-soft-ink); background: var(--warn-soft); padding: 5px 9px; border-radius: 6px; }
 .form { display: flex; flex-direction: column; gap: 14px; }
 
 .chips { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface-3); border-radius: 9px; }

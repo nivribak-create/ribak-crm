@@ -5,7 +5,7 @@ import { openModal, confirmDialog, toast, field, select, formData, copyBtn } fro
 import { openScript } from './callscript.js';
 import { SALES_SCRIPT, visibleFields } from './scripts.js';
 import { preserve } from './render.js';
-import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso } from './util.js';
+import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso, phoneProblem } from './util.js';
 
 // ---- add / edit ---------------------------------------------------------
 export function openLeadForm(lead = null) {
@@ -13,7 +13,11 @@ export function openLeadForm(lead = null) {
   const body = `
     <form class="form" id="lead-form">
       ${field('שם', `<input class="input" name="name" required value="${esc(lead?.name || '')}" placeholder="שם מלא" autocomplete="off">`)}
-      ${field('טלפון', `<input class="input" name="phone" required inputmode="tel" value="${esc(lead?.phone || '')}" placeholder="050-0000000" autocomplete="off">`)}
+      <label class="field">
+        <span class="field__label">טלפון</span>
+        <input class="input" name="phone" required inputmode="tel" value="${esc(lead?.phone || '')}" placeholder="050-0000000" autocomplete="off">
+        <span class="field__warn" data-phone-warn hidden></span>
+      </label>
       ${field('מקור', select('source', SOURCES, lead?.source || SOURCES[0]))}
       <label class="field" data-infl ${lead?.source === INFLUENCER_SOURCE ? '' : 'hidden'}>
         <span class="field__label">שם המשפיען</span>
@@ -32,10 +36,27 @@ export function openLeadForm(lead = null) {
   form0.addEventListener('change', e => {
     if (e.target.name === 'source') form0.querySelector('[data-infl]').hidden = e.target.value !== INFLUENCER_SOURCE;
   });
+  // A number that cannot be dialled is worth saying out loud before it is
+  // saved, but not worth refusing — there is always an exception.
+  const phoneWarn = form0.querySelector('[data-phone-warn]');
+  const checkPhone = () => {
+    const problem = form0.phone.value.trim() ? phoneProblem(form0.phone.value) : null;
+    phoneWarn.textContent = problem ? `⚠ ${problem}` : '';
+    phoneWarn.hidden = !problem;
+    return problem;
+  };
+  form0.phone.addEventListener('input', checkPhone);
+  checkPhone();
   form0.addEventListener('submit', e => {
     e.preventDefault();
     const d = formData(e.target);
     if (!d.name || !d.phone) return;
+    // one confirmation, then it is saved as typed
+    if (checkPhone() && !e.target.dataset.confirmed) {
+      e.target.dataset.confirmed = '1';
+      toast(`${checkPhone()} – לחץ שוב לשמור בכל זאת`, 'warn');
+      return;
+    }
     if (isEdit) {
       store.updateLead(lead.id, { name: d.name, phone: d.phone, source: d.source, influencer: d.source === INFLUENCER_SOURCE ? d.influencer : '', notes: d.notes, nextAt: d.nextAt || null });
       toast('הפרטים נשמרו');
