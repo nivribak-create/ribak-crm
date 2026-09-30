@@ -1,7 +1,7 @@
 import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE } from '../model.js';
-import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum } from '../util.js';
+import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, isParked, parseDay, fmtDateLong, endOfWeek, isoDay, addDays } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
-import { copyBtn, toast } from '../ui.js';
+import { copyBtn, toast, openModal, field, formData } from '../ui.js';
 import { installDrag } from '../dnd.js';
 import * as store from '../store.js';
 
@@ -15,13 +15,17 @@ function boardHtml(state, today) {
   const qDigits = q.replace(/\D/g, '');
   const match = l => !q || l.name.toLowerCase().includes(q) || (qDigits && l.phone.replace(/\D/g, '').includes(qDigits)) || (l.notes || '').toLowerCase().includes(q);
   const leads = state.leads.filter(match);
+  // Anyone due back after this week waits off to the side until their day.
+  const parked = leads.filter(isParked).sort((a, b) => (a.nextAt < b.nextAt ? -1 : 1));
+  const onBoard = leads.filter(l => !isParked(l));
   const cols = STAGES.map(s => ({
     stage: s,
-    leads: leads.filter(l => l.stage === s.id && l.status !== 'lost').sort((a, b) => sortKey(a, today) - sortKey(b, today)),
+    leads: onBoard.filter(l => l.stage === s.id && l.status !== 'lost' && l.status !== 'churned')
+      .sort((a, b) => sortKey(a, today) - sortKey(b, today)),
   }));
-  const lostLeads = leads.filter(l => l.status === 'lost' || l.status === 'churned').sort((a, b) => (a.lostAt < b.lostAt ? 1 : -1));
+  const lostLeads = onBoard.filter(l => l.status === 'lost' || l.status === 'churned').sort((a, b) => (a.lostAt < b.lostAt ? 1 : -1));
   return {
-    html: cols.map(c => column(c, today)).join('') + (ui.showLost ? lostColumn(lostLeads) : ''),
+    html: cols.map(c => column(c, today)).join('') + futureColumn(parked) + (ui.showLost ? lostColumn(lostLeads) : ''),
     lostCount: lostLeads.length,
     activeCount: leads.filter(l => l.status === 'active').length,
   };
@@ -75,8 +79,33 @@ function drop(id, stage) {
     openLostDialog(lead);
     return;
   }
-  store.moveToStage(id, stage);
+  if (stage === '__future') { openParkDialog(lead); return; }
+  // pulling one back out of the waiting area means dealing with it now
+  if (isParked(lead)) store.setNextAt(id, null);
+  if (lead.stage !== stage) store.moveToStage(id, stage);
   toast(`${lead.name} → ${STAGE_BY_ID[stage].label}`);
+}
+
+// Parking needs a date, so ask for one rather than invent it.
+function openParkDialog(lead) {
+  const earliest = isoDay(addDays(endOfWeek(), 1));
+  const m = openModal({
+    title: 'פולואפ עתידי',
+    body: `
+      <form class="form" id="park-form">
+        <p class="modal__text">מתי לחזור אל ${esc(lead.name)}? עד אז הוא ימתין בצד ולא יופיע בלוח.</p>
+        ${field('תאריך', `<input class="input" type="date" name="nextAt" required value="${esc(isoDay(addDays(endOfWeek(), 2)))}" min="${esc(earliest)}">`, `חייב להיות אחרי ${fmtDateLong(endOfWeek().toISOString())}`)}
+      </form>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="park-form">שמור</button>`,
+  });
+  m.el.querySelector('#park-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const { nextAt } = formData(e.target);
+    if (!nextAt) return;
+    store.setNextAt(lead.id, nextAt);
+    m.close();
+    toast(`${lead.name} יחזור ב-${fmtDateLong(parseDay(nextAt).toISOString())}`);
+  });
 }
 
 // A lead you have already touched today has had its turn, so it sinks to
@@ -141,6 +170,48 @@ function card(l, today, isFinal) {
     </div>
     ${l.notes ? `<p class="card__notes">${esc(l.notes)}</p>` : ''}
     ${isFinal ? '' : `<div class="card__actions">${actionButtons(l, { compact: true })}</div>`}
+  </article>`;
+}
+
+// Everyone due back after this week. The lead keeps the stage it is really
+// on — this is only where it is shown — so when the date arrives it
+// reappears exactly where it left off.
+function futureColumn(leads) {
+  const until = fmtDateLong(endOfWeek().toISOString());
+  return `<section class="col col--future" data-stage="__future" aria-label="פולואפ עתידי">
+    <header class="col__head">
+      <span class="col__dot"></span>
+      <h2 class="col__title">פולואפ עתידי</h2>
+      <span class="col__count">${fmtNum(leads.length)}</span>
+      <span class="col__waiting">לחזור אחרי ${esc(until)}</span>
+    </header>
+    <div class="col__body">
+      ${leads.length ? leads.map(futureCard).join('')
+        : '<div class="col__empty">מי שתסמן לחזור אליו בשבוע הבא ואילך יופיע כאן</div>'}
+    </div>
+  </section>`;
+}
+
+function futureCard(l) {
+  const days = daysBetween(new Date(), l.nextAt);
+  return `<article class="card card--future" data-id="${l.id}" tabindex="0" style="--c:var(--f${stageIndex(l.stage)})">
+    <div class="card__top">
+      <b class="card__name">${esc(l.name)}</b>
+      <span class="card__source">${esc(l.source)}</span>
+    </div>
+    <div class="card__meta">
+      <span class="card__phone-wrap">
+        <a class="card__phone" href="${telLink(l.phone)}">${esc(fmtPhone(l.phone))}</a>
+        ${copyBtn(l.phone)}
+      </span>
+      <a class="card__wa" href="${waLink(l.phone)}" target="_blank" rel="noopener">וואטסאפ</a>
+    </div>
+    <div class="future__when">
+      <b>${esc(fmtDateLong(parseDay(l.nextAt).toISOString()))}</b>
+      <span>בעוד ${fmtNum(days)} ${days === 1 ? 'יום' : 'ימים'}</span>
+    </div>
+    <div class="card__row muted">יחזור ל${esc(STAGE_BY_ID[l.stage].label)}</div>
+    ${l.notes ? `<p class="card__notes">${esc(l.notes)}</p>` : ''}
   </article>`;
 }
 

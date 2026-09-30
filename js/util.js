@@ -62,6 +62,22 @@ export const telLink = p => `tel:${normPhone(p)}`;
 
 export const plural = (n, one, many) => (n === 1 ? one : many);
 
+// A 'yyyy-mm-dd' value means that day where the user is, not UTC.
+export const parseDay = iso => (iso ? new Date(`${iso}T00:00:00`) : null);
+
+// The week runs Sunday to Saturday, which is how the delivery week works
+// here too.
+export function endOfWeek(from = new Date()) {
+  const end = addDays(dayStart(from), 6 - dayStart(from).getDay());
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+// Somebody to come back to after this week is over is parked out of the
+// way until then, rather than sitting in a column pretending to be work.
+export const isParked = lead =>
+  lead.status === 'active' && Boolean(lead.nextAt) && parseDay(lead.nextAt) > endOfWeek();
+
 // ---- the weekly rhythm -------------------------------------------------
 // Orders close Wednesday 23:00; whatever is in by then is delivered the
 // following Sunday morning. Everything about urgency hangs off these two.

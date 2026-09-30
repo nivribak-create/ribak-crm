@@ -53,6 +53,17 @@ const repaint = state => renderInto(main, () => VIEWS[current].render(main, stat
 // moment the screen is free again.
 document.addEventListener('ribak:idle', () => uiIdle(main));
 
+// Which leads are "due after this week" depends on today's date, so a tab
+// left open overnight repaints when it is looked at again.
+let paintedOn = new Date().toDateString();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !current) return;
+  const now = new Date().toDateString();
+  if (now === paintedOn) return;
+  paintedOn = now;
+  repaint(store.getState());
+});
+
 window.addEventListener('hashchange', route);
 
 // ---- gate: login / setup screens (remote mode only) ---------------------

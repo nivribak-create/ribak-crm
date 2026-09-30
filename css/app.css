@@ -997,6 +997,17 @@ body.has-script { overflow: hidden; }
 .col__waiting { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .col__head { flex-wrap: wrap; }
 
+/* the waiting area for follow-ups due after this week */
+.col--future { --c: var(--muted); background: var(--surface-3); }
+.col--future .col__head { background: var(--surface-3); }
+.card--future { border-inline-start-color: var(--c); }
+.future__when {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 7px 10px; border-radius: 8px; background: var(--surface-2);
+}
+.future__when b { font-size: 14px; font-weight: 600; }
+.future__when span { font-size: 12.5px; color: var(--muted); }
+
 /* ==========================================================================
    Dragging cards between columns
    ========================================================================== */
