@@ -3,7 +3,7 @@
 // next one lands. Each choice is written straight to the database, so a
 // session that stops halfway keeps everything already sorted.
 
-import { STAGES, LOST_REASONS, SOURCES, INFLUENCER_SOURCE, UNKNOWN_SOURCE, reasonLabel } from '../model.js';
+import { STAGES, LOST_REASONS, SOURCES, INFLUENCER_SOURCE, UNKNOWN_SOURCE, reasonLabel, DISQUALIFYING } from '../model.js';
 import * as store from '../store.js';
 import { readFile, readText } from '../import.js';
 import { esc, fmtNum, fmtPhone, waLink, telLink, plural } from '../util.js';
@@ -269,7 +269,7 @@ function renderPlay(root) {
       lostStage = st.dataset.lostStage;
       root.querySelectorAll('[data-lost-stage]').forEach(x => x.classList.toggle('is-on', x === st));
       const list = LOST_REASONS.filter(r => r.from.includes(lostStage) || !r.from.length);
-      whyChips.innerHTML = list.map(r => `<button class="chip chip--lost" data-reason="${r.id}">${esc(r.label)}</button>`).join('');
+      whyChips.innerHTML = list.map(r => `<button class="chip chip--lost ${DISQUALIFYING.has(r.id) ? 'chip--disq' : ''}" data-reason="${r.id}" ${DISQUALIFYING.has(r.id) ? 'title="לא נספר ככישלון מכירה"' : ''}>${esc(r.label)}${DISQUALIFYING.has(r.id) ? ' ∅' : ''}</button>`).join('');
       why.classList.remove('is-hidden');
       return;
     }

@@ -976,6 +976,17 @@ body.has-script { overflow: hidden; }
   .outcome__track { grid-column: 1 / -1; grid-row: 2; }
 }
 
+/* reasons that take a lead out of the conversion rate say so */
+.choice--disq .choice__mark { margin-inline-start: auto; color: var(--muted); font-style: normal; font-size: 15px; }
+.choice--disq:has(input:checked) { border-color: var(--warn); background: var(--warn-soft); color: var(--warn-soft-ink); }
+.choice--disq:has(input:checked) .choice__mark { color: var(--warn-soft-ink); }
+.disq-warn {
+  font-size: 13.5px; line-height: 1.55; padding: 11px 13px; border-radius: 9px;
+  background: var(--warn-soft); color: var(--warn-soft-ink);
+}
+.disq-warn b { display: block; margin-bottom: 3px; }
+.chip--disq { border-style: dashed; }
+
 /* ==========================================================================
    Moving a lead without dragging it
    ========================================================================== */

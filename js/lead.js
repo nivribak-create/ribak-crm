@@ -1,5 +1,5 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
@@ -52,9 +52,10 @@ export function openLostDialog(lead) {
   const relevant = LOST_REASONS.filter(r => r.from.includes(lead.stage));
   const others = LOST_REASONS.filter(r => !r.from.includes(lead.stage));
   const radio = r => `
-    <label class="choice">
+    <label class="choice ${DISQUALIFYING.has(r.id) ? 'choice--disq' : ''}">
       <input type="radio" name="reason" value="${r.id}">
       <span>${esc(r.label)}</span>
+      ${DISQUALIFYING.has(r.id) ? '<i class="choice__mark" title="לא נספר ככישלון מכירה">∅</i>' : ''}
     </label>`;
   const body = `
     <form class="form" id="lost-form">
@@ -64,12 +65,22 @@ export function openLostDialog(lead) {
         <summary>סיבות נוספות</summary>
         <div class="choices">${others.map(radio).join('')}</div>
       </details>
+      <p class="disq-warn" data-disq hidden>
+        <b>שים לב – הסיבה הזו מוציאה את הליד מסטטיסטיקת ההמרה.</b>
+        הוא לא ייחשב ככישלון מכירה, כי מלכתחילה לא הייתה כאן עסקה אפשרית.
+        בחר בה רק אם זה באמת המצב. מי ששמע אותך ואמר לא – מגיעה לו סיבה אמיתית.
+      </p>
       ${field('הערה (לא חובה)', `<input class="input" name="note" placeholder="למשל: אמר שיחזור אחרי החגים">`)}
     </form>`;
   const m = openModal({
     title: 'סימון ליד כאבוד',
     body,
     footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--danger" type="submit" form="lost-form">סימון כאבוד</button>`,
+  });
+  const warn = m.el.querySelector('[data-disq]');
+  m.el.querySelector('#lost-form').addEventListener('change', e => {
+    if (e.target.name !== 'reason') return;
+    warn.hidden = !DISQUALIFYING.has(e.target.value);
   });
   m.el.querySelector('#lost-form').addEventListener('submit', e => {
     e.preventDefault();
