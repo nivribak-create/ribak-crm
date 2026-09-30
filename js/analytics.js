@@ -4,7 +4,7 @@
 // the last 30 days, how many closed".
 
 import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf } from './model.js';
-import { dayStart, addDays, daysBetween, pct1, nextDeadline, isoDay } from './util.js';
+import { dayStart, addDays, daysBetween, pct1, nextDeadline, isoDay, isParked } from './util.js';
 
 export const RANGES = [
   { id: '7',   label: '7 ימים',  days: 7 },
@@ -130,7 +130,7 @@ export function computeAnalytics(allLeads, filters = {}) {
 
   // ---- follow-ups due (always across all active leads) -----------------
   const today = dayStart(new Date());
-  const activeAll = allLeads.filter(l => l.status === 'active' && l.nextAt);
+  const activeAll = allLeads.filter(l => l.status === 'active' && l.nextAt && !isParked(l));
   const due = {
     overdue: activeAll.filter(l => daysBetween(today, l.nextAt) < 0).length,
     today: activeAll.filter(l => daysBetween(today, l.nextAt) === 0).length,
@@ -153,11 +153,15 @@ export function computeAnalytics(allLeads, filters = {}) {
 
   // This week's clock. Orders close Wednesday 23:00; whoever got food last
   // Sunday has until then to become a subscriber.
+  // Somebody parked for a later week is not this week's work, so they are
+  // left out of every count here.
+  const working = allLeads.filter(l => l.status === 'active' && !isParked(l));
   const week = {
     deadline: nextDeadline(),
-    toConvert: allLeads.filter(l => l.status === 'active' && ['delivered', 'repeat'].includes(l.stage)).length,
-    toCall: allLeads.filter(l => l.status === 'active' && l.stage === 'new').length,
-    waitingDelivery: allLeads.filter(l => l.status === 'active' && l.stage === 'trial').length,
+    toConvert: working.filter(l => ['delivered', 'repeat'].includes(l.stage)).length,
+    toCall: working.filter(l => l.stage === 'new').length,
+    waitingDelivery: working.filter(l => l.stage === 'trial').length,
+    parked: allLeads.filter(l => l.status === 'active' && isParked(l)).length,
   };
   return {
     today: dayReport(allLeads, new Date()),

@@ -1,7 +1,7 @@
 import { STAGE_BY_ID, SOURCES, OUTCOMES } from '../model.js';
 import { computeAnalytics, RANGES } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
-import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong } from '../util.js';
+import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, isParked } from '../util.js';
 import { handleAction, openDrawer } from '../lead.js';
 import { copyBtn } from '../ui.js';
 
@@ -164,6 +164,7 @@ function thisWeek(a) {
         <small>${w.waitingDelivery ? 'אליהם מתקשרים ביום שלישי' : 'אין ממתינים'}</small>
       </a>
     </div>
+    ${w.parked ? `<p class="week__parked">${fmtNum(w.parked)} נוספים ממתינים בפולואפ עתידי ולא נספרים כאן</p>` : ''}
   </section>`;
 }
 
@@ -213,7 +214,7 @@ function sourcesTable(a) {
 function dueList(leads) {
   const today = new Date();
   const due = leads
-    .filter(l => l.status === 'active' && l.nextAt && daysBetween(today, l.nextAt) <= 0)
+    .filter(l => l.status === 'active' && l.nextAt && !isParked(l) && daysBetween(today, l.nextAt) <= 0)
     .sort((a, b) => (a.nextAt < b.nextAt ? -1 : 1));
   if (!due.length) return `<div class="empty">אין פולואפים שממתינים להיום. 👌</div>`;
   return `<ul class="due-list">${due.map(l => {
