@@ -1,7 +1,7 @@
 import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, isParked, parseDay, fmtDateLong, endOfWeek, isoDay, addDays } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
-import { copyBtn, toast, openModal, field, formData } from '../ui.js';
+import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
 import { installDrag } from '../dnd.js';
 import * as store from '../store.js';
 
@@ -58,6 +58,8 @@ export function render(root, state) {
   });
   root.onclick = e => {
     if (e.target.closest('a')) { e.stopPropagation(); return; }
+    const mv = e.target.closest('[data-move-menu]');
+    if (mv) { e.stopPropagation(); openStageMenu(mv.dataset.moveMenu, mv); return; }
     if (handleAction(e)) return;
     const card = e.target.closest('.card');
     if (card) openDrawer(card.dataset.id);
@@ -84,6 +86,33 @@ function drop(id, stage) {
   if (isParked(lead)) store.setNextAt(id, null);
   if (lead.stage !== stage) store.moveToStage(id, stage);
   toast(`${lead.name} → ${STAGE_BY_ID[stage].label}`);
+}
+
+// Picking the stage from a list beats dragging a card to a column that is
+// usually off-screen — same result, one tap, and it works the same on a
+// phone.
+export function openStageMenu(id, anchor) {
+  const lead = store.getLead(id);
+  if (!lead) return;
+  const parked = isParked(lead);
+  const items = STAGES.map((st, i) => ({
+    label: st.label,
+    value: st.id,
+    swatch: `var(--f${i})`,
+    current: st.id === lead.stage && !parked,
+    hint: st.id === lead.stage && parked ? 'כאן הוא יחזור' : '',
+  }));
+  items.push({ separator: true });
+  items.push(parked
+    ? { label: 'החזר לעבודה עכשיו', value: '__unpark' }
+    : { label: 'פולואפ עתידי…', value: '__future' });
+  if (lead.status === 'active') items.push({ label: 'סימון כאבוד…', value: '__lost', danger: true });
+
+  openMenu(anchor, items, item => {
+    if (!item || item.current) return;
+    if (item.value === '__unpark') { store.setNextAt(id, null); toast(`${lead.name} חזר לעבודה`); return; }
+    drop(id, item.value);
+  });
 }
 
 // Parking needs a date, so ask for one rather than invent it.
@@ -154,6 +183,7 @@ function card(l, today, isFinal) {
     <div class="card__top">
       <b class="card__name">${esc(l.name)}</b>
       <span class="card__source">${esc(l.source)}</span>
+      <button class="card__move" data-move-menu="${l.id}" title="העברה לשלב אחר" aria-label="העברה לשלב אחר">⇄</button>
     </div>
     <div class="card__meta">
       <span class="card__phone-wrap">
@@ -198,6 +228,7 @@ function futureCard(l) {
     <div class="card__top">
       <b class="card__name">${esc(l.name)}</b>
       <span class="card__source">${esc(l.source)}</span>
+      <button class="card__move" data-move-menu="${l.id}" title="העברה לשלב אחר" aria-label="העברה לשלב אחר">⇄</button>
     </div>
     <div class="card__meta">
       <span class="card__phone-wrap">
@@ -224,7 +255,11 @@ function lostColumn(leads) {
     </header>
     <div class="col__body">
       ${leads.length ? leads.map(l => `<article class="card card--lost" data-id="${l.id}" tabindex="0">
-        <div class="card__top"><b class="card__name">${esc(l.name)}</b><span class="card__source">${esc(l.source)}</span></div>
+        <div class="card__top">
+          <b class="card__name">${esc(l.name)}</b>
+          <span class="card__source">${esc(l.source)}</span>
+          <button class="card__move" data-move-menu="${l.id}" title="העברה לשלב אחר" aria-label="העברה לשלב אחר">⇄</button>
+        </div>
         <div class="card__row"><span class="tag tag--${l.status === 'churned' ? 'churn' : 'lost'}">${l.status === 'churned' ? 'הפסיק מנוי · ' : ''}${esc(reasonLabel(l.lostReason))}</span></div>
         <div class="card__row muted">בשלב ${esc(STAGE_BY_ID[l.stage].short)} · ${relDays(l.lostAt)}</div>
         <div class="card__actions">${actionButtons(l)}</div>

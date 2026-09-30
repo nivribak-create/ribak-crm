@@ -163,6 +163,15 @@ export function restore(lead) {
   store.restoreLead(lead.id);
   toast(`${lead.name} חזר לפייפליין`, 'good');
 }
+// Tapping a step in the drawer moves the lead there, in either direction.
+export function goToStage(lead, stageId) {
+  const target = STAGE_BY_ID[stageId];
+  if (!target || (lead.stage === stageId && lead.status === 'active')) return;
+  if (lead.nextAt) store.setNextAt(lead.id, null);
+  store.moveToStage(lead.id, stageId);
+  toast(`${lead.name} → ${target.label}`);
+}
+
 export function subscribeNow(lead) {
   store.advanceLead(lead.id, FINAL_STAGE);
   toast(`🎉 ${lead.name} סגר מנוי!`, 'good');
@@ -220,6 +229,7 @@ export function handleAction(e) {
     case 'script': openScript(lead.id, 'sales'); break;
     case 'to-influencer': openToInfluencer(lead); break;
     case 'subscribe': subscribeNow(lead); break;
+    case 'goto': goToStage(lead, b.dataset.to); break;
     case 'restore': restore(lead); break;
     case 'edit': openLeadForm(lead); break;
     case 'delete': remove(lead); break;
@@ -308,7 +318,13 @@ function paintDrawer(panel) {
     const cls = i < idx ? 'is-done'
       : i === idx ? (lead.status === 'lost' || lead.status === 'churned' ? 'is-lost' : lead.status === 'won' ? 'is-won' : 'is-current')
       : '';
-    return `<li class="stepper__step ${cls}"><span class="stepper__dot"></span><span class="stepper__label">${esc(s.short)}</span></li>`;
+    const here = i === idx && lead.status === 'active';
+    return `<li class="stepper__step ${cls}">
+      <button class="stepper__hit" data-act="goto" data-to="${s.id}" data-id="${lead.id}"
+        title="${here ? esc(s.label) : 'העברה ל' + esc(s.label)}" ${here ? 'disabled' : ''}>
+        <span class="stepper__dot"></span><span class="stepper__label">${esc(s.short)}</span>
+      </button>
+    </li>`;
   }).join('');
 
   const timeline = [...lead.events].reverse().map(ev => {

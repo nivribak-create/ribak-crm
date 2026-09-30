@@ -975,6 +975,51 @@ body.has-script { overflow: hidden; }
 }
 
 /* ==========================================================================
+   Moving a lead without dragging it
+   ========================================================================== */
+.menu {
+  position: fixed; z-index: 70; min-width: 210px; max-width: min(300px, 92vw);
+  padding: 5px; border-radius: 12px; background: var(--surface);
+  border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop);
+  display: flex; flex-direction: column; gap: 1px;
+  animation: menu-in .12s cubic-bezier(.2, .7, .2, 1);
+}
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } }
+.menu__item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 9px 11px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--ink); font: 500 14.5px/1.3 var(--font); text-align: start; cursor: pointer;
+}
+.menu__item:hover:not([disabled]) { background: var(--surface-2); }
+.menu__item.is-current { background: var(--accent-soft); color: var(--accent-soft-ink); }
+.menu__item.is-danger { color: var(--lost); }
+.menu__item.is-danger:hover { background: var(--lost-soft); }
+.menu__item[disabled] { cursor: default; }
+.menu__item span { flex: 1; min-width: 0; }
+.menu__item small { font-size: 11.5px; color: var(--muted); }
+.menu__swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.menu__sep { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+
+.card__move {
+  width: 26px; height: 26px; flex-shrink: 0; display: inline-grid; place-items: center;
+  border: 1px solid transparent; border-radius: 7px; background: transparent;
+  color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.card__move:hover { background: var(--accent-soft); color: var(--accent-soft-ink); border-color: var(--accent); }
+.card:hover .card__move { color: var(--ink-2); }
+
+/* the drawer's stepper doubles as the stage picker */
+.stepper__hit {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: 100%; padding: 2px 0; border: 0; background: transparent; cursor: pointer;
+}
+.stepper__hit[disabled] { cursor: default; }
+.stepper__hit:hover:not([disabled]) .stepper__dot { border-color: var(--accent); transform: scale(1.15); }
+.stepper__hit:hover:not([disabled]) .stepper__label { color: var(--ink); }
+.stepper__dot { transition: transform .12s, border-color .12s; }
+
+/* ==========================================================================
    Copy buttons — every phone number is one click from the clipboard
    ========================================================================== */
 .copy {

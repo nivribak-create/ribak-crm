@@ -132,6 +132,66 @@ const COPY_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 export const copyBtn = (text, label = 'העתקת המספר') =>
   `<button class="copy" data-copy="${esc(text)}" title="${esc(label)}" aria-label="${esc(label)}">${COPY_ICON}</button>`;
 
+// ---- popover menu -------------------------------------------------------
+// Anchored to whatever was clicked and attached to the body, so a column's
+// own scrolling cannot clip it. Items: { label, hint, value, disabled,
+// current, danger, separator }.
+let openMenuEl = null;
+
+export function closeMenu() {
+  openMenuEl?.remove();
+  openMenuEl = null;
+  document.removeEventListener('keydown', onMenuKey, true);
+}
+
+function onMenuKey(e) {
+  if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); }
+}
+
+export function openMenu(anchor, items, onPick) {
+  closeMenu();
+  const el = document.createElement('div');
+  el.className = 'menu';
+  el.setAttribute('role', 'menu');
+  el.innerHTML = items.map((it, i) => (it.separator
+    ? '<hr class="menu__sep">'
+    : `<button class="menu__item ${it.current ? 'is-current' : ''} ${it.danger ? 'is-danger' : ''}"
+         role="menuitem" data-i="${i}" ${it.disabled ? 'disabled' : ''}>
+         ${it.swatch ? `<i class="menu__swatch" style="background:${it.swatch}"></i>` : ''}
+         <span>${esc(it.label)}</span>
+         ${it.hint ? `<small>${esc(it.hint)}</small>` : ''}
+       </button>`)).join('');
+  document.body.appendChild(el);
+  openMenuEl = el;
+
+  const r = anchor.getBoundingClientRect();
+  const m = el.getBoundingClientRect();
+  const pad = 8;
+  let top = r.bottom + 6;
+  if (top + m.height > innerHeight - pad) top = Math.max(pad, r.top - m.height - 6);
+  let left = r.right - m.width;               // right-aligned, as RTL reads
+  left = Math.min(Math.max(pad, left), innerWidth - m.width - pad);
+  el.style.top = `${top}px`;
+  el.style.left = `${left}px`;
+
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    const item = items[Number(b.dataset.i)];
+    closeMenu();
+    onPick(item);
+  });
+  setTimeout(() => {
+    document.addEventListener('click', function away(ev) {
+      if (el.contains(ev.target)) return;
+      document.removeEventListener('click', away, true);
+      closeMenu();
+    }, true);
+  }, 0);
+  document.addEventListener('keydown', onMenuKey, true);
+  el.querySelector('.menu__item:not([disabled])')?.focus();
+}
+
 // ---- form helpers -------------------------------------------------------
 export const field = (label, control, hint = '') => `
   <label class="field">
