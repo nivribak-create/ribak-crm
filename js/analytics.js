@@ -3,7 +3,7 @@
 // so "conversion in the last 30 days" means "of leads that came in during
 // the last 30 days, how many closed".
 
-import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf } from './model.js';
+import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf, DISQUALIFYING } from './model.js';
 import { dayStart, addDays, daysBetween, pct1, nextDeadline, isoDay, isParked } from './util.js';
 
 export const RANGES = [
@@ -148,7 +148,15 @@ export function computeAnalytics(allLeads, filters = {}) {
   const sellTrial = { from: pitched, to: trialReached, pct: pct1(trialReached, pitched), lost: pitched - trialReached };
   // how far the whole intake gets: every lead that came in against those
   // that paid for a first week
-  const toTrial = { from: n, to: trialReached, pct: pct1(trialReached, n), lost: n - trialReached };
+  // A wrong number, a duplicate, an influencer filed by mistake or someone
+  // outside the delivery area was never a sale that could have happened —
+  // counting them as failures understates how well the selling works.
+  const disqualified = leads.filter(l => l.status === 'lost' && DISQUALIFYING.has(l.lostReason)).length;
+  const qualified = n - disqualified;
+  const toTrial = {
+    from: qualified, to: trialReached, pct: pct1(trialReached, qualified),
+    lost: qualified - trialReached, disqualified,
+  };
   const sellSub = { from: delivered, to: sold, pct: pct1(sold, delivered), lost: delivered - sold };
 
   // Where the most people are actually falling out — in people, not
@@ -172,7 +180,7 @@ export function computeAnalytics(allLeads, filters = {}) {
     today: dayReport(allLeads, new Date()),
     yesterday: dayReport(allLeads, addDays(new Date(), -1)),
     leads, total: n, sold, won, churned, lost, active, outcomes,
-    convTotal: pct1(sold, n),
+    convTotal: pct1(sold, qualified),
     convTrial: pct1(sold, trialReached),
     churnRate: pct1(churned, sold),
     trialReached,

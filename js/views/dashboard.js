@@ -129,6 +129,7 @@ function trialCard(a) {
       נכנסו <b>${fmtNum(c.from)}</b> לידים. <b>${fmtNum(c.to)}</b> הגיעו לשבוע ניסיון או רחוק יותר.
       ${c.lost ? `${fmtNum(c.lost)} לא הגיעו לשם.` : ''}
     </p>
+    ${c.disqualified ? `<p class="conv__note">${fmtNum(c.disqualified)} לא נספרים – מספר שגוי, כפילות, מחוץ לאזור החלוקה או משפיען שהועבר לרשימה</p>` : ''}
   </section>`;
 }
 
