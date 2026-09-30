@@ -29,6 +29,8 @@ export function filterLeads(leads, { range = 'all', source = '' } = {}) {
 export function dayReport(leads, date = new Date()) {
   const day = isoDay(date);
   let dials = 0, fullCalls = 0, trialCloses = 0, subCloses = 0;
+  // leads that arrived on this day, however they got in
+  const arrived = leads.filter(l => isoDay(l.createdAt) === day).length;
   for (const l of leads) {
     const today = l.events.filter(e => !e.imported && isoDay(e.t) === day);
     if (!today.length) continue;
@@ -40,7 +42,7 @@ export function dayReport(leads, date = new Date()) {
     trialCloses += today.filter(e => e.type === 'advanced' && e.stage === 'trial').length;
     subCloses += today.filter(e => e.type === 'advanced' && e.stage === 'subscribed').length;
   }
-  return { dials, fullCalls, trialCloses, subCloses, closes: trialCloses + subCloses };
+  return { arrived, dials, fullCalls, trialCloses, subCloses, closes: trialCloses + subCloses };
 }
 
 export function computeAnalytics(allLeads, filters = {}) {
@@ -144,6 +146,9 @@ export function computeAnalytics(allLeads, filters = {}) {
   // The two conversions the business actually turns on: talking someone
   // into a first week, and turning that first week into a subscription.
   const sellTrial = { from: pitched, to: trialReached, pct: pct1(trialReached, pitched), lost: pitched - trialReached };
+  // how far the whole intake gets: every lead that came in against those
+  // that paid for a first week
+  const toTrial = { from: n, to: trialReached, pct: pct1(trialReached, n), lost: n - trialReached };
   const sellSub = { from: delivered, to: sold, pct: pct1(sold, delivered), lost: delivered - sold };
 
   // Where the most people are actually falling out — in people, not
@@ -171,7 +176,7 @@ export function computeAnalytics(allLeads, filters = {}) {
     convTrial: pct1(sold, trialReached),
     churnRate: pct1(churned, sold),
     trialReached,
-    sellTrial, sellSub, leak, topReason, week,
+    sellTrial, sellSub, toTrial, leak, topReason, week,
     funnel, reasons, weekly, sources, influencers, stageDays, avgDaysToWin,
     attempts: { total: attemptEvents.length, byStage: attemptsByStage, leads: leadsWithAttempts },
     due,

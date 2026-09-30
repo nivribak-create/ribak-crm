@@ -18,6 +18,7 @@ export function render(root, state) {
     ${!hasAny ? emptyState() : ''}
 
     ${hasAny ? dayCard(a) : ''}
+    ${hasAny ? trialCard(a) : ''}
     ${hasAny ? conversionCard(a) : ''}
     ${hasAny ? thisWeek(a) : ''}
 
@@ -108,10 +109,26 @@ function dayCard(a) {
       <span class="muted">${esc(fmtDateLong(new Date().toISOString()))}</span>
     </header>
     <div class="day__cells">
+      ${cell('לידים חדשים', t.arrived, y.arrived)}
       ${cell('חיוגים', t.dials, y.dials)}
       ${cell('שיחות מלאות', t.fullCalls, y.fullCalls)}
       ${cell('סגירות', t.closes, y.closes, closeNote)}
     </div>
+  </section>`;
+}
+
+// How much of the intake ever reaches a paid first week.
+function trialCard(a) {
+  const c = a.toTrial;
+  if (!c.from) return '';
+  const tone = c.pct >= 40 ? 'good' : c.pct >= 20 ? 'warn' : 'bad';
+  return `<section class="conv conv--${tone}">
+    <h2>מליד חדש לשבוע ניסיון</h2>
+    <p class="conv__big">${c.pct}%</p>
+    <p class="conv__body">
+      נכנסו <b>${fmtNum(c.from)}</b> לידים. <b>${fmtNum(c.to)}</b> הגיעו לשבוע ניסיון או רחוק יותר.
+      ${c.lost ? `${fmtNum(c.lost)} לא הגיעו לשם.` : ''}
+    </p>
   </section>`;
 }
 
