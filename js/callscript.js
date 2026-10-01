@@ -290,12 +290,15 @@ function finish(outcome) {
   store.saveScript(leadId, scriptId, state.answers);
   store.finishScript(leadId, scriptId, summarize());
 
-  // Having pitched is progress even when nothing was sold.
-  if (['new', 'followup'].includes(lead.stage)) store.advanceLead(leadId, 'pitched');
+  // One move, not two: having pitched is progress even when nothing was
+  // sold, and a lead that said yes goes all the way to the trial week.
+  const target = outcome === 'closed' ? 'trial'
+    : ['new', 'followup'].includes(lead.stage) ? 'pitched' : null;
+  if (target) store.advanceLead(leadId, target);
   closeScript();
 
   const after = store.getLead(leadId);
-  if (outcome === 'closed') { store.advanceLead(leadId, 'trial'); toast(`${after.name} סגר שבוע ניסיון 🎉`, 'good'); }
+  if (outcome === 'closed') { toast(`${after.name} סגר שבוע ניסיון 🎉`, 'good'); }
   else if (outcome === 'no_answer') attempt(after);
   else if (outcome === 'lost') openLostDialog(after);
   else toast('השיחה תועדה – קבע פולואפ בכרטיס');

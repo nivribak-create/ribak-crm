@@ -116,18 +116,52 @@ function commit(leads, settings, changes) {
   notify();
 }
 
-async function pushChanges(ch) {
+// A PUT sends the lead's whole record, so the last request to reach the
+// server wins. One click can fire several mutations — finishing a call
+// script saves the answers, closes the script and then moves the lead —
+// and firing those requests at once let the earlier, staler record land
+// last: a lead that closed a trial week was stored back at "שיחת מכירה".
+// So requests go out one at a time, and while a lead waits its turn only
+// its newest version is kept.
+const pending = { leads: new Map(), remove: new Set(), settings: false, replace: false };
+let draining = null;
+const hasPending = () => pending.replace || pending.leads.size > 0 || pending.remove.size > 0 || pending.settings;
+
+function pushChanges(ch) {
+  // Replacing everything supersedes anything queued for single leads.
+  if (ch.replace) { pending.leads.clear(); pending.remove.clear(); pending.replace = true; }
+  for (const l of ch.upsert || []) { pending.remove.delete(l.id); pending.leads.set(l.id, l); }
+  for (const id of ch.remove || []) { pending.leads.delete(id); pending.remove.add(id); }
+  if (ch.settings) pending.settings = true;
+  if (!draining) draining = drain();
+}
+
+async function drain() {
   state = { ...state, syncing: state.syncing + 1 };
   try {
-    if (ch.replace) await api.replaceLeads(state.leads);
-    for (const l of ch.upsert || []) await api.saveLead(l);
-    for (const id of ch.remove || []) await api.removeLead(id);
-    if (ch.settings) await api.saveSettings(state.settings);
-  } catch (e) {
-    state = { ...state, lastError: describe(e) };
-    if (e.status === 401) state = { ...state, auth: false };
-    notify();
+    while (hasPending()) {
+      try {
+        if (pending.replace) { pending.replace = false; await api.replaceLeads(state.leads); }
+        else if (pending.leads.size) {
+          const [id, lead] = pending.leads.entries().next().value;
+          pending.leads.delete(id);
+          await api.saveLead(lead);
+        } else if (pending.remove.size) {
+          const id = pending.remove.values().next().value;
+          pending.remove.delete(id);
+          await api.removeLead(id);
+        } else if (pending.settings) { pending.settings = false; await api.saveSettings(state.settings); }
+      } catch (e) {
+        // Stop after a failure instead of hammering the server; whatever is
+        // still queued goes out with the next change.
+        state = { ...state, lastError: describe(e) };
+        if (e.status === 401) state = { ...state, auth: false };
+        notify();
+        break;
+      }
+    }
   } finally {
+    draining = null;
     state = { ...state, syncing: state.syncing - 1 };
     notify();
   }
