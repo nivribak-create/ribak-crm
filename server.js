@@ -249,6 +249,11 @@ const webhookAuthed = req => {
 };
 const newId = () => Date.now().toString(36) + crypto.randomBytes(4).toString('hex').slice(0, 6);
 
+// Keep in step with SOURCES in js/model.js: an unknown string would show up
+// in the app as a source of its own and split the numbers.
+const INBOUND_SOURCES = ['אינסטגרם – ממומן', 'אינסטגרם – משפיען', 'המלצה', 'אתר', 'וואטסאפ', 'אחר', 'לא ידוע'];
+const DEFAULT_SOURCE = 'אינסטגרם – ממומן';
+
 app.post('/api/inbound/lead', wrap(async (req, res) => {
   if (!WEBHOOK_SECRET) return res.status(503).json({ error: 'webhook_not_configured', code: 'webhook_not_configured' });
   if (!webhookAuthed(req)) return res.status(401).json({ error: 'unauthorized', code: 'unauthorized' });
@@ -256,10 +261,14 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   const b = req.body && typeof req.body === 'object' ? req.body : {};
   const text = String(b.text || b.message || '').trim().slice(0, 1000);
   const phone = extractPhone(b.phone, text);
-  if (!phone) return res.status(422).json({ error: 'no_phone', code: 'no_phone', message: 'no Israeli mobile number found' });
+  // Most DMs are just conversation, so an automation can forward all of them
+  // and let this decide. Nothing to do is a success, not an error — otherwise
+  // the automation's log fills with failures and hides the real ones.
+  if (!phone) return res.json({ ok: true, created: false, reason: 'no_phone' });
   const username = String(b.username || b.ig_username || '').trim().replace(/^@/, '');
   const name = String(b.name || b.full_name || '').trim() || (username ? `@${username}` : 'ליד מאינסטגרם');
-  const source = String(b.source || 'אינסטגרם').trim().slice(0, 40);
+  const asked = String(b.source || '').trim();
+  const source = INBOUND_SOURCES.includes(asked) ? asked : DEFAULT_SOURCE;
   const now = new Date().toISOString();
   const noteText = [text ? `הודעה: "${text.slice(0, 300)}"` : '', username ? `אינסטגרם: @${username}` : ''].filter(Boolean).join(' · ');
 

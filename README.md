@@ -90,6 +90,23 @@
 | `PUT /settings` | שמירת הגדרות |
 | `POST /inbound/lead` | כניסת ליד מאוטומציה (ManyChat / Make / n8n). כותרת `X-Webhook-Key: <WEBHOOK_SECRET>`; גוף `{name, phone \| text, username, source, notes}` – המספר מחולץ גם מתוך הטקסט; ליד קיים עם אותו מספר מקבל הערה במקום כפילות |
 
+## לידים מאינסטגרם אוטומטית (ManyChat)
+
+כל הודעה פרטית באינסטגרם שיש בה מספר טלפון ישראלי נכנסת ל-CRM כליד חדש.
+
+1. **Hostinger** → האתר → Environment variables → משתנה חדש `WEBHOOK_SECRET` עם מחרוזת רנדומלית → Save → Restart.
+2. **ManyChat** (דרוש Pro בשביל External Request) → Automation → New Automation → טריגר Instagram → **Default Reply**.
+3. צעד **Action → External Request**:
+   - Method `POST`, URL `https://<האתר>/api/inbound/lead`
+   - Header: `X-Webhook-Key` = אותו `WEBHOOK_SECRET`
+   - Body (JSON): `{"text": "{{Last Text Input}}", "username": "{{Instagram Username}}", "name": "{{First Name}} {{Last Name}}"}`
+4. Publish.
+
+התשובות שהשרת מחזיר: `201` – נוצר ליד; `200 {reason:"no_phone"}` – הודעה בלי מספר, אין מה לעשות (לא שגיאה, כדי שאפשר להעביר *כל* הודעה);
+`200 {created:false, id}` – המספר כבר קיים, נוספה הערה לליד; `401` – מפתח שגוי; `503` – `WEBHOOK_SECRET` לא מוגדר.
+
+ה-`source` מתקבל רק אם הוא אחד מהמקורות שבאפליקציה, אחרת הליד נרשם כ"אינסטגרם – ממומן".
+
 ## GitHub Pages (גיבוי, מצב מקומי)
 
 האתר מתפרסם גם מענף `main` ב-GitHub Pages: `https://<user>.github.io/<repo>/` – בלי שרת, ולכן במצב מקומי.
