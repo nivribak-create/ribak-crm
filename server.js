@@ -9,7 +9,9 @@
 //   SESSION_SECRET    – optional; random string used to sign session cookies
 //   SESSION_DAYS      – optional; how long a login lasts (default 30)
 //   WEBHOOK_SECRET    – optional; enables POST /api/inbound/lead for
-//                       automations (ManyChat, Make, n8n…) that push leads in
+//                       automations (ManyChat, a website form, Make, n8n…)
+//                       that push leads in. Several keys, comma separated,
+//                       so one sender can be cut off without the others.
 
 const path = require('path');
 const crypto = require('crypto');
@@ -242,10 +244,18 @@ function extractPhone(...candidates) {
   }
   return null;
 }
+// More than one automation pushes leads in — ManyChat, the website form, a
+// contractor's script — so WEBHOOK_SECRET holds a key per sender, separated
+// by commas. Each can be replaced without taking the others down.
+const WEBHOOK_KEYS = String(WEBHOOK_SECRET || '').split(',').map(k => k.trim()).filter(Boolean);
 const webhookAuthed = req => {
-  if (!WEBHOOK_SECRET) return false;
   const given = String(req.get('x-webhook-key') || req.query.key || '');
-  return given.length === WEBHOOK_SECRET.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(WEBHOOK_SECRET));
+  if (!given) return false;
+  // Hashed first so every key is compared at the same length.
+  const g = sha(given);
+  let ok = false;
+  for (const k of WEBHOOK_KEYS) if (crypto.timingSafeEqual(g, sha(k))) ok = true;
+  return ok;
 };
 const newId = () => Date.now().toString(36) + crypto.randomBytes(4).toString('hex').slice(0, 6);
 
@@ -255,7 +265,7 @@ const INBOUND_SOURCES = ['אינסטגרם – ממומן', 'אינסטגרם �
 const DEFAULT_SOURCE = 'אינסטגרם – ממומן';
 
 app.post('/api/inbound/lead', wrap(async (req, res) => {
-  if (!WEBHOOK_SECRET) return res.status(503).json({ error: 'webhook_not_configured', code: 'webhook_not_configured' });
+  if (!WEBHOOK_KEYS.length) return res.status(503).json({ error: 'webhook_not_configured', code: 'webhook_not_configured' });
   if (!webhookAuthed(req)) return res.status(401).json({ error: 'unauthorized', code: 'unauthorized' });
   await ensureSchema();
   const b = req.body && typeof req.body === 'object' ? req.body : {};
@@ -271,6 +281,13 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   const source = INBOUND_SOURCES.includes(asked) ? asked : DEFAULT_SOURCE;
   const now = new Date().toISOString();
   const noteText = [text ? `הודעה: "${text.slice(0, 300)}"` : '', username ? `אינסטגרם: @${username}` : ''].filter(Boolean).join(' · ');
+  // Whether someone agreed to marketing messages is the kind of thing you
+  // have to be able to prove later, so it goes on the timeline with its own
+  // timestamp rather than into a field that an edit could overwrite.
+  const consent = b.consent === undefined || b.consent === null || b.consent === ''
+    ? null : [true, 'true', 1, '1', 'yes', 'on', 'כן'].includes(b.consent);
+  const consentNote = consent === null ? null
+    : consent ? 'אישר/ה קבלת תכנים שיווקיים' : 'לא סימן/ה הסכמה לתכנים שיווקיים – פנייה בלבד';
 
   // dedupe by phone – scan is fine at this scale
   const [rows] = await pool.query('SELECT id, data FROM leads');
@@ -279,7 +296,11 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     try { const l = JSON.parse(r.data); if (String(l.phone || '').replace(/\D/g, '') === phone) { existing = l; break; } } catch { /* skip */ }
   }
   if (existing) {
-    existing.events = [...(existing.events || []), { t: now, type: 'note', text: `פנייה חוזרת (${source})${noteText ? ' · ' + noteText : ''}` }];
+    existing.events = [
+      ...(existing.events || []),
+      { t: now, type: 'note', text: `פנייה חוזרת (${source})${noteText ? ' · ' + noteText : ''}` },
+      ...(consentNote ? [{ t: now, type: 'note', text: consentNote }] : []),
+    ];
     existing.updatedAt = now;
     if (existing.status === 'active' && !existing.nextAt) existing.nextAt = now.slice(0, 10);
     await pool.query('UPDATE leads SET data = ?, updated_at = ? WHERE id = ?', [JSON.stringify(existing), toSqlDate(now), existing.id]);
@@ -291,7 +312,11 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     createdAt: now, updatedAt: now,
     stage: 'new', status: 'active', lostReason: null, lostAt: null,
     nextAt: now.slice(0, 10), attempts: 0,
-    events: [{ t: now, type: 'created', stage: 'new' }, ...(noteText ? [{ t: now, type: 'note', text: noteText }] : [])],
+    events: [
+      { t: now, type: 'created', stage: 'new' },
+      ...(noteText ? [{ t: now, type: 'note', text: noteText }] : []),
+      ...(consentNote ? [{ t: now, type: 'note', text: consentNote }] : []),
+    ],
   };
   await pool.query('INSERT INTO leads (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)', [lead.id, JSON.stringify(lead), toSqlDate(now), toSqlDate(now)]);
   res.status(201).json({ ok: true, created: true, id: lead.id });
