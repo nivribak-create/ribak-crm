@@ -263,6 +263,26 @@ const newId = () => Date.now().toString(36) + crypto.randomBytes(4).toString('he
 // in the app as a source of its own and split the numbers.
 const INBOUND_SOURCES = ['אינסטגרם – ממומן', 'אינסטגרם – משפיען', 'המלצה', 'אתר', 'וואטסאפ', 'אחר', 'לא ידוע'];
 const DEFAULT_SOURCE = 'אינסטגרם – ממומן';
+const INFLUENCER_SOURCE = 'אינסטגרם – משפיען';
+
+// An influencer's link carries a short ref ("dana_fit") while the same
+// person may be filed in the app under a name or a handle. Matching them up
+// is what keeps one collaboration from being counted as two.
+async function canonicalInfluencer(raw) {
+  const given = raw.replace(/^@/, '').toLowerCase();
+  if (!given) return '';
+  try {
+    const [rows] = await pool.query("SELECT v FROM settings WHERE k = 'influencers'");
+    const list = rows.length ? JSON.parse(rows[0].v) : [];
+    for (const i of Array.isArray(list) ? list : []) {
+      const handle = String(i.handle || '').replace(/^@/, '').toLowerCase();
+      const name = String(i.name || '').trim().toLowerCase();
+      if ((handle && handle === given) || (name && name === given)) return i.handle ? `@${i.handle}` : i.name;
+    }
+  } catch { /* an unreadable list is no reason to drop the attribution */ }
+  // A latin slug came out of a URL, so it is a handle; a Hebrew name is a name.
+  return /^[A-Za-z0-9._-]+$/.test(given) ? `@${given}` : raw;
+}
 
 app.post('/api/inbound/lead', wrap(async (req, res) => {
   if (!WEBHOOK_KEYS.length) return res.status(503).json({ error: 'webhook_not_configured', code: 'webhook_not_configured' });
@@ -277,8 +297,14 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   if (!phone) return res.json({ ok: true, created: false, reason: 'no_phone' });
   const username = String(b.username || b.ig_username || '').trim().replace(/^@/, '');
   const name = String(b.name || b.full_name || '').trim() || (username ? `@${username}` : 'ליד מאינסטגרם');
+  // Which influencer sent them is the whole point of a gateway link, so it
+  // is read from `influencer` or from the link's own `ref`.
+  const influencer = await canonicalInfluencer(
+    String(b.influencer || b.ref || '').trim().replace(/\s+/g, ' ').slice(0, 60),
+  );
   const asked = String(b.source || '').trim();
-  const source = INBOUND_SOURCES.includes(asked) ? asked : DEFAULT_SOURCE;
+  const source = influencer ? INFLUENCER_SOURCE
+    : INBOUND_SOURCES.includes(asked) ? asked : DEFAULT_SOURCE;
   const now = new Date().toISOString();
   const noteText = [text ? `הודעה: "${text.slice(0, 300)}"` : '', username ? `אינסטגרם: @${username}` : ''].filter(Boolean).join(' · ');
   // Whether someone agreed to marketing messages is the kind of thing you
@@ -296,9 +322,15 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     try { const l = JSON.parse(r.data); if (String(l.phone || '').replace(/\D/g, '') === phone) { existing = l; break; } } catch { /* skip */ }
   }
   if (existing) {
+    // Whoever brought them in first keeps the credit; a second influencer's
+    // link only earns a line on the timeline.
+    const credited = String(existing.influencer || '').trim();
+    const stolen = influencer && credited && credited !== influencer;
+    if (influencer && !credited) { existing.influencer = influencer; existing.source = INFLUENCER_SOURCE; }
     existing.events = [
       ...(existing.events || []),
-      { t: now, type: 'note', text: `פנייה חוזרת (${source})${noteText ? ' · ' + noteText : ''}` },
+      { t: now, type: 'note', text: `פנייה חוזרת (${source})${influencer ? ' · ' + influencer : ''}${noteText ? ' · ' + noteText : ''}` },
+      ...(stolen ? [{ t: now, type: 'note', text: `הגיע גם מהלינק של ${influencer} – הקרדיט נשאר אצל ${credited}` }] : []),
       ...(consentNote ? [{ t: now, type: 'note', text: consentNote }] : []),
     ];
     existing.updatedAt = now;
@@ -307,7 +339,7 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     return res.json({ ok: true, created: false, id: existing.id });
   }
   const lead = {
-    id: newId(), name, phone, source,
+    id: newId(), name, phone, source, influencer,
     notes: String(b.notes || '').trim().slice(0, 500) || (username ? `@${username}` : ''),
     createdAt: now, updatedAt: now,
     stage: 'new', status: 'active', lostReason: null, lostAt: null,

@@ -173,6 +173,10 @@ function column({ stage, leads }, today) {
   </section>`;
 }
 
+// A lead from a collaboration is only interesting as whose lead it is, so
+// the card shows the influencer instead of the bucket the numbers use.
+const sourceLabel = l => l.influencer || l.source;
+
 function card(l, today, isFinal) {
   const since = [...l.events].reverse().find(e => e.type === 'advanced' || e.type === 'created');
   const inStage = since ? daysBetween(since.t, today) : 0;
@@ -182,7 +186,7 @@ function card(l, today, isFinal) {
   return `<article class="card ${isFinal ? 'card--won' : ''} ${dueCls} ${done ? 'is-handled' : ''}" data-id="${l.id}" tabindex="0">
     <div class="card__top">
       <b class="card__name">${esc(l.name)}</b>
-      <span class="card__source">${esc(l.source)}</span>
+      <span class="card__source">${esc(sourceLabel(l))}</span>
       <button class="card__move" data-move-menu="${l.id}" title="העברה לשלב אחר" aria-label="העברה לשלב אחר">⇄</button>
     </div>
     <div class="card__meta">
@@ -227,7 +231,7 @@ function futureCard(l) {
   return `<article class="card card--future" data-id="${l.id}" tabindex="0" style="--c:var(--f${stageIndex(l.stage)})">
     <div class="card__top">
       <b class="card__name">${esc(l.name)}</b>
-      <span class="card__source">${esc(l.source)}</span>
+      <span class="card__source">${esc(sourceLabel(l))}</span>
       <button class="card__move" data-move-menu="${l.id}" title="העברה לשלב אחר" aria-label="העברה לשלב אחר">⇄</button>
     </div>
     <div class="card__meta">
@@ -257,7 +261,7 @@ function lostColumn(leads) {
       ${leads.length ? leads.map(l => `<article class="card card--lost" data-id="${l.id}" tabindex="0">
         <div class="card__top">
           <b class="card__name">${esc(l.name)}</b>
-          <span class="card__source">${esc(l.source)}</span>
+          <span class="card__source">${esc(sourceLabel(l))}</span>
           <button class="card__move" data-move-menu="${l.id}" title="העברה לשלב אחר" aria-label="העברה לשלב אחר">⇄</button>
         </div>
         <div class="card__row"><span class="tag tag--${l.status === 'churned' ? 'churn' : 'lost'}">${l.status === 'churned' ? 'הפסיק מנוי · ' : ''}${esc(reasonLabel(l.lostReason))}</span></div>
