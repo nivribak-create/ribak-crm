@@ -1,5 +1,5 @@
 import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction } from '../model.js';
-import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, isParked, parseDay, fmtDateLong, endOfWeek, isoDay, addDays } from '../util.js';
+import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
 import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
 import { installDrag } from '../dnd.js';
@@ -16,8 +16,8 @@ function boardHtml(state, today) {
   const match = l => !q || l.name.toLowerCase().includes(q) || (qDigits && l.phone.replace(/\D/g, '').includes(qDigits)) || (l.notes || '').toLowerCase().includes(q);
   const leads = state.leads.filter(match);
   // Anyone due back after this week waits off to the side until their day.
-  const parked = leads.filter(isParked).sort((a, b) => (a.nextAt < b.nextAt ? -1 : 1));
-  const onBoard = leads.filter(l => !isParked(l));
+  const parked = leads.filter(dueLater).sort((a, b) => (a.nextAt < b.nextAt ? -1 : 1));
+  const onBoard = leads.filter(l => !dueLater(l));
   const cols = STAGES.map(s => ({
     stage: s,
     leads: onBoard.filter(l => l.stage === s.id && l.status !== 'lost' && l.status !== 'churned')
@@ -83,7 +83,7 @@ function drop(id, stage) {
   }
   if (stage === '__future') { openParkDialog(lead); return; }
   // pulling one back out of the waiting area means dealing with it now
-  if (isParked(lead)) store.setNextAt(id, null);
+  if (dueLater(lead)) store.setNextAt(id, null);
   if (lead.stage !== stage) store.moveToStage(id, stage);
   toast(`${lead.name} → ${STAGE_BY_ID[stage].label}`);
 }
@@ -94,7 +94,7 @@ function drop(id, stage) {
 export function openStageMenu(id, anchor) {
   const lead = store.getLead(id);
   if (!lead) return;
-  const parked = isParked(lead);
+  const parked = dueLater(lead);
   const items = STAGES.map((st, i) => ({
     label: st.label,
     value: st.id,
@@ -117,13 +117,13 @@ export function openStageMenu(id, anchor) {
 
 // Parking needs a date, so ask for one rather than invent it.
 function openParkDialog(lead) {
-  const earliest = isoDay(addDays(endOfWeek(), 1));
+  const tomorrow = isoDay(addDays(new Date(), 1));
   const m = openModal({
     title: 'פולואפ עתידי',
     body: `
       <form class="form" id="park-form">
         <p class="modal__text">מתי לחזור אל ${esc(lead.name)}? עד אז הוא ימתין בצד ולא יופיע בלוח.</p>
-        ${field('תאריך', `<input class="input" type="date" name="nextAt" required value="${esc(isoDay(addDays(endOfWeek(), 2)))}" min="${esc(earliest)}">`, `חייב להיות אחרי ${fmtDateLong(endOfWeek().toISOString())}`)}
+        ${field('תאריך', `<input class="input" type="date" name="nextAt" required value="${esc(tomorrow)}" min="${esc(tomorrow)}">`, 'ביום עצמו הוא יחזור לעמודה שלו')}
       </form>`,
     footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="park-form">שמור</button>`,
   });
@@ -211,17 +211,17 @@ function card(l, today, isFinal) {
 // on — this is only where it is shown — so when the date arrives it
 // reappears exactly where it left off.
 function futureColumn(leads) {
-  const until = fmtDateLong(endOfWeek().toISOString());
+  const next = leads[0] ? fmtDate(leads[0].nextAt) : '';
   return `<section class="col col--future" data-stage="__future" aria-label="פולואפ עתידי">
     <header class="col__head">
       <span class="col__dot"></span>
       <h2 class="col__title">פולואפ עתידי</h2>
       <span class="col__count">${fmtNum(leads.length)}</span>
-      <span class="col__waiting">לחזור אחרי ${esc(until)}</span>
+      <span class="col__waiting">${next ? `הקרוב ${esc(next)}` : ''}</span>
     </header>
     <div class="col__body">
       ${leads.length ? leads.map(futureCard).join('')
-        : '<div class="col__empty">מי שתסמן לחזור אליו בשבוע הבא ואילך יופיע כאן</div>'}
+        : '<div class="col__empty">מי שתסמן לחזור אליו ביום אחר יופיע כאן, ויחזור לעמודה שלו ביום עצמו</div>'}
     </div>
   </section>`;
 }

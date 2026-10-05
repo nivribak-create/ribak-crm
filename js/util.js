@@ -99,6 +99,12 @@ export function endOfWeek(from = new Date()) {
 export const isParked = lead =>
   lead.status === 'active' && Boolean(lead.nextAt) && parseDay(lead.nextAt) > endOfWeek();
 
+// A lead you decided to come back to on a later day is not today's work.
+// The board is the list of people to call now, so it keeps it out until the
+// day comes round — anything overdue or due today stays where it is.
+export const dueLater = lead =>
+  lead.status === 'active' && Boolean(lead.nextAt) && daysBetween(new Date(), lead.nextAt) > 0;
+
 // ---- the weekly rhythm -------------------------------------------------
 // Orders close Wednesday 23:00; whatever is in by then is delivered the
 // following Sunday morning. Everything about urgency hangs off these two.
