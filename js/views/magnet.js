@@ -6,7 +6,7 @@
 // influencer sends is worth the hours it takes to call it.
 
 import { STAGES, stageIndex, reasonLabel, DISQUALIFYING, everSubscribed, viaMagnet, untouched, talkedTo } from '../model.js';
-import { computeAnalytics } from '../analytics.js';
+import { computeAnalytics, dayReport } from '../analytics.js';
 import { hbars } from '../charts.js';
 import { esc, fmtNum, pct1, fmtDateLong, fmtDateTime, isoDay, addDays } from '../util.js';
 import { openDrawer } from '../lead.js';
@@ -37,7 +37,7 @@ export function render(root, state) {
         ולא ביקשו שתתקשר – ולכן הם נספרים לחוד, ולא מופיעים במספרים שבלוח הבקרה.</p>
     </section>
 
-    ${arrivals(mine, m, today)}
+    ${arrivals(mine, m, today, dayReport(state.leads))}
     ${unrecorded(mine)}
     ${funnelCard(m)}
     ${closeRate(m)}
@@ -60,7 +60,7 @@ export function render(root, state) {
 }
 
 // ---- what came in -------------------------------------------------------
-function arrivals(mine, m, today) {
+function arrivals(mine, m, today, everyone) {
   const yday = isoDay(addDays(new Date(), -1));
   const cell = (label, value, note) => `
     <div class="day__cell"><b>${fmtNum(value)}</b><span>${esc(label)}</span><small>${esc(note)}</small></div>`;
@@ -71,6 +71,8 @@ function arrivals(mine, m, today) {
       <h2>המגנט היום</h2>
       <span class="muted">${esc(fmtDateLong(new Date().toISOString()))}</span>
     </header>
+    <p class="day__scope muted">לידים קרים בלבד. היום בסך הכל <b>${fmtNum(everyone.dials)}</b> חיוגים
+      ו-<b>${fmtNum(everyone.fullCalls)}</b> שיחות מלאות – השאר אצל הלידים החמים, בלוח הבקרה.</p>
     <div class="day__cells">
       ${cell('נכנסו היום', arrivedToday, `אתמול ${fmtNum(arrivedYday)}`)}
       ${cell('חיוגים', m.today.dials, `אתמול ${fmtNum(m.yesterday.dials)}`)}

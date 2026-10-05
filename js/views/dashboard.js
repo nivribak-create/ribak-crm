@@ -1,5 +1,5 @@
 import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet } from '../model.js';
-import { computeAnalytics, RANGES } from '../analytics.js';
+import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, isParked } from '../util.js';
 import { handleAction, openDrawer } from '../lead.js';
@@ -21,7 +21,7 @@ export function render(root, state) {
     ${!hasAny ? emptyState() : ''}
     ${cold ? `<p class="cold-note">${fmtNum(cold)} לידים קרים מהמגנט נספרים בנפרד · <a href="#/magnet">למסך המגנט ←</a></p>` : ''}
 
-    ${hasAny ? dayCard(a) : ''}
+    ${hasAny ? dayCard(a, cold ? dayReport(state.leads) : null) : ''}
     ${hasAny ? trialCard(a) : ''}
     ${hasAny ? conversionCard(a) : ''}
     ${hasAny ? thisWeek(a) : ''}
@@ -95,7 +95,7 @@ const OUTCOME_CLASS = { open: 'active', subscriber: 'won', churned: 'churn', rep
 
 // The day, counted off the timeline: every dial, every conversation that
 // actually happened, and everything that closed.
-function dayCard(a) {
+function dayCard(a, everyone) {
   const t = a.today;
   const y = a.yesterday;
   const cell = (label, now, then, note = '') => `
@@ -112,6 +112,8 @@ function dayCard(a) {
       <h2>סיכום היום</h2>
       <span class="muted">${esc(fmtDateLong(new Date().toISOString()))}</span>
     </header>
+    ${everyone ? `<p class="day__scope muted">לידים חמים בלבד. היום בסך הכל <b>${fmtNum(everyone.dials)}</b> חיוגים
+      ו-<b>${fmtNum(everyone.fullCalls)}</b> שיחות מלאות – השאר אצל הלידים הקרים, <a href="#/magnet">במסך המגנט</a>.</p>` : ''}
     <div class="day__cells">
       ${cell('לידים חדשים', t.arrived, y.arrived)}
       ${cell('חיוגים', t.dials, y.dials)}
