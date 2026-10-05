@@ -8,8 +8,9 @@
 import { STAGES, stageIndex, reasonLabel, DISQUALIFYING, everSubscribed, viaMagnet, untouched, talkedTo } from '../model.js';
 import { computeAnalytics } from '../analytics.js';
 import { hbars } from '../charts.js';
-import { esc, fmtNum, pct1, fmtDateLong, isoDay, addDays } from '../util.js';
+import { esc, fmtNum, pct1, fmtDateLong, fmtDateTime, isoDay, addDays } from '../util.js';
 import { openDrawer } from '../lead.js';
+import { openModal, toast } from '../ui.js';
 import * as store from '../store.js';
 
 export function render(root, state) {
@@ -37,6 +38,7 @@ export function render(root, state) {
     </section>
 
     ${arrivals(mine, m, today)}
+    ${unrecorded(mine)}
     ${funnelCard(m)}
     ${closeRate(m)}
     ${compare(m, w)}
@@ -50,6 +52,7 @@ export function render(root, state) {
 
     ${dropouts(mine)}`;
 
+  root.querySelector('[data-log-talks]')?.addEventListener('click', () => openTalkPicker(mine));
   root.onclick = e => {
     const row = e.target.closest('[data-lead]');
     if (row) openDrawer(row.dataset.lead);
@@ -77,6 +80,54 @@ function arrivals(mine, m, today) {
   </section>`;
 }
 
+
+// ---- calls that happened but were never written down --------------------
+// A lead written off without a call recorded is either one you rang and
+// ruled out, or one you never dialled — only you know which, so it is a
+// list to tick rather than something to assume.
+const needsTalk = l => (l.status === 'lost' || l.status === 'churned') && !talkedTo(l);
+
+function unrecorded(mine) {
+  const n = mine.filter(needsTalk).length;
+  if (!n) return '';
+  return `<section class="panel panel--intro">
+    <h2>יש ${fmtNum(n)} לידים שנסגרו בלי שנרשמה שיחה</h2>
+    <p class="muted">אם דיברת איתם בטלפון, זה לא נספר לך היום – לא בחיוגים ולא בשיחות המלאות.</p>
+    <p><button class="btn btn--primary" data-log-talks>☎ לסמן עם מי דיברת</button></p>
+  </section>`;
+}
+
+function openTalkPicker(mine) {
+  const list = mine.filter(needsTalk).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  const when = l => {
+    const e = (l.events || []).find(x => x.type === 'lost' || x.type === 'churned');
+    return e ? fmtDateTime(e.t) : '';
+  };
+  const m = openModal({
+    title: 'עם מי דיברת בטלפון?',
+    wide: true,
+    body: `
+      <p class="modal__text">סמן את מי שבאמת ניהלת איתו שיחה. מי שרק סימנת בלי להתקשר – תשאיר מכובה.</p>
+      <div class="pull-list">
+        ${list.map((l, i) => `
+          <label class="pull">
+            <input type="checkbox" checked data-i="${i}">
+            <span class="pull__body">
+              <b>${esc(l.name)}</b>
+              <small class="muted">${esc(reasonLabel(l.lostReason))}${l.influencer ? ` · ${esc(displayName(l.influencer))}` : ''} · ${esc(when(l))}</small>
+            </span>
+          </label>`).join('')}
+      </div>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" data-go>רישום השיחות</button>`,
+  });
+  m.el.querySelector('[data-go]').addEventListener('click', () => {
+    const ids = [...m.el.querySelectorAll('[data-i]')].filter(c => c.checked).map(c => list[Number(c.dataset.i)].id);
+    if (!ids.length) { toast('לא נבחר אף אחד', 'warn'); return; }
+    const n = store.logTalkMany(ids);
+    m.close();
+    toast(`נרשמו ${fmtNum(n)} שיחות`, 'good');
+  });
+}
 // ---- how far they get ---------------------------------------------------
 function funnelCard(m) {
   const at = id => m.funnel[stageIndex(id)].reached;

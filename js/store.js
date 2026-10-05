@@ -338,6 +338,29 @@ export function logTalk(id, at = null) {
   });
 }
 
+// Several at once, in one write: going through them one by one would push
+// a separate save per lead.
+export function logTalkMany(ids) {
+  const want = new Set(ids);
+  const t = nowIso();
+  const changed = [];
+  const leads = state.leads.map(l => {
+    if (!want.has(l.id) || (l.events || []).some(e => e.type === 'talked')) return l;
+    const lost = (l.events || []).find(e => e.type === 'lost' || e.type === 'churned');
+    const at = lost ? new Date(new Date(lost.t).getTime() - 60000).toISOString() : t;
+    const copy = {
+      ...l,
+      updatedAt: t,
+      events: [...l.events, { t: at, type: 'talked', stage: lost?.stage || l.stage }]
+        .sort((a, b) => (a.t < b.t ? -1 : 1)),
+    };
+    changed.push(copy);
+    return copy;
+  });
+  if (changed.length) commit(leads, state.settings, { upsert: changed });
+  return changed.length;
+}
+
 export function deleteLead(id) {
   commit(state.leads.filter(l => l.id !== id), state.settings, { remove: [id] });
 }
