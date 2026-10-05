@@ -1133,3 +1133,5 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .strays { background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
 .strays b { display: block; margin-bottom: 2px; }
 .strays__row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.radio { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; cursor: pointer; }
+.radio input { margin-top: 3px; }

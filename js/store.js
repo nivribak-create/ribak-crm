@@ -351,6 +351,10 @@ export function saveInfluencer(inf) {
   const clean = {
     id: inf.id || uid(),
     handle: String(inf.handle || '').trim().replace(/^@/, ''),
+    // The id a gateway link puts on a lead, which is usually shorter than
+    // the handle — "shir" for @shirtaran. Without it her leads land on a
+    // card of their own and the collaboration looks like two people.
+    ref: String(inf.ref || '').trim().replace(/^@/, ''),
     name: String(inf.name || '').trim(),
     phone: String(inf.phone || '').trim(),
     status: inf.status || 'wishlist',

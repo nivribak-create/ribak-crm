@@ -276,8 +276,11 @@ async function canonicalInfluencer(raw) {
     const list = rows.length ? JSON.parse(rows[0].v) : [];
     for (const i of Array.isArray(list) ? list : []) {
       const handle = String(i.handle || '').replace(/^@/, '').toLowerCase();
+      const ref = String(i.ref || '').replace(/^@/, '').toLowerCase();
       const name = String(i.name || '').trim().toLowerCase();
-      if ((handle && handle === given) || (name && name === given)) return i.handle ? `@${i.handle}` : i.name;
+      if ((handle && handle === given) || (ref && ref === given) || (name && name === given)) {
+        return i.handle ? `@${i.handle}` : i.name;
+      }
     }
   } catch { /* an unreadable list is no reason to drop the attribution */ }
   // A latin slug came out of a URL, so it is a handle; a Hebrew name is a name.

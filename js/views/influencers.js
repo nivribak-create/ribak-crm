@@ -24,7 +24,7 @@ export function render(root, state) {
   const cols = INFLUENCER_STATUSES.map(s => ({ status: s, items: list.filter(i => i.status === s.id) }));
   const strays = untracked(state.leads, list);
   const totals = list.reduce((acc, i) => {
-    const s = stats[key(i.handle)];
+    const s = statsFor(stats, i);
     if (s) { acc.leads += s.total; acc.won += s.won; }
     return acc;
   }, { leads: 0, won: 0 });
@@ -60,11 +60,8 @@ export function render(root, state) {
 
   root.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm()));
   root.querySelector('[data-pull]')?.addEventListener('click', () => openPull(state));
-  root.querySelectorAll('[data-add-handle]').forEach(b => b.addEventListener('click', () => {
-    const handle = b.dataset.addHandle;
-    store.saveInfluencer({ handle, status: 'active' });
-    toast(`@${handle} נוסף לרשימה`, 'good');
-  }));
+  root.querySelectorAll('[data-add-handle]').forEach(b =>
+    b.addEventListener('click', () => openClaim(b.dataset.addHandle, store.getInfluencers())));
   root.onclick = e => {
     if (e.target.closest('a')) { e.stopPropagation(); return; }
     const move = e.target.closest('[data-move]');
@@ -86,6 +83,10 @@ export function render(root, state) {
 }
 
 const key = h => String(h || '').trim().replace(/^@/, '').toLowerCase();
+// An influencer answers both to their handle and to the shorter id their
+// gateway link puts on a lead.
+const keysOf = i => [key(i.handle), key(i.ref)].filter(Boolean);
+const ownerOf = (list, handle) => { const k = key(handle); return list.find(i => keysOf(i).includes(k)) || null; };
 
 // Leads carry the influencer handle as free text, so match case-insensitively
 // and ignore a leading @ either side.
@@ -93,7 +94,7 @@ const key = h => String(h || '').trim().replace(/^@/, '').toLowerCase();
 // person may not be on this board at all — without this their leads are
 // counted nowhere and nobody can send them a report.
 function untracked(leads, list) {
-  const known = new Set(list.map(i => key(i.handle)));
+  const known = new Set(list.flatMap(keysOf));
   const found = new Map();
   for (const l of leads) {
     const k = key(l.influencer);
@@ -124,10 +125,16 @@ function column({ status, items }, stats) {
       <span class="col__count">${fmtNum(items.length)}</span>
     </header>
     <div class="col__body">
-      ${items.length ? items.map(i => card(i, stats[key(i.handle)])).join('') : '<div class="col__empty">ריק</div>'}
+      ${items.length ? items.map(i => card(i, statsFor(stats, i))).join('') : '<div class="col__empty">ריק</div>'}
     </div>
   </section>`;
 }
+
+const statsFor = (stats, inf) => {
+  const parts = keysOf(inf).map(k => stats[k]).filter(Boolean);
+  if (!parts.length) return undefined;
+  return parts.reduce((a, b) => ({ total: a.total + b.total, trial: a.trial + b.trial, won: a.won + b.won }));
+};
 
 function card(inf, s) {
   const idx = INFLUENCER_STATUSES.findIndex(x => x.id === inf.status);
@@ -168,6 +175,7 @@ function openForm(inf = null) {
   const body = `
     <form class="form" id="infl-form">
       ${field('שם משתמש באינסטגרם', `<input class="input" name="handle" required value="${esc(inf?.handle || '')}" placeholder="noa_fit" autocomplete="off" dir="ltr">`, 'בלי @ – זה מה שמקשר בין המשפיען ללידים שהוא מביא')}
+      ${field('מזהה בלינק', `<input class="input" name="ref" value="${esc(inf?.ref || '')}" placeholder="noa" autocomplete="off" dir="ltr">`, 'ה-ref שמופיע בלינק הייעודי שלו, אם הוא שונה משם המשתמש')}
       ${field('שם', `<input class="input" name="name" value="${esc(inf?.name || '')}" placeholder="נועה כהן" autocomplete="off">`)}
       ${field('טלפון', `<input class="input" name="phone" inputmode="tel" value="${esc(inf?.phone || '')}" placeholder="050-0000000" autocomplete="off">`)}
       ${field('עוקבים', `<input class="input" name="followers" value="${esc(inf?.followers || '')}" placeholder="45K" autocomplete="off">`)}
@@ -202,6 +210,43 @@ function openForm(inf = null) {
 
 
 
+
+// A link id that nobody on the board answers to is either a new partner or
+// the short form of someone already here, and only the person who set up
+// the link knows which — so it is asked rather than guessed.
+function openClaim(handle, list) {
+  const options = list
+    .slice()
+    .sort((a, b) => a.handle.localeCompare(b.handle))
+    .map(i => `<option value="${esc(i.id)}">@${esc(i.handle)}${i.name ? ` – ${esc(i.name)}` : ''}</option>`)
+    .join('');
+  const m = openModal({
+    title: `לידים מ-@${handle}`,
+    body: `
+      <p class="modal__text">הגיעו לידים עם המזהה <b dir="ltr">${esc(handle)}</b>. למי הם שייכים?</p>
+      <form class="form" id="claim-form">
+        ${field('', `<label class="radio"><input type="radio" name="who" value="new" checked> <span>משפיען חדש – פתח לו כרטיס בשם <b dir="ltr">@${esc(handle)}</b></span></label>
+        ${options ? `<label class="radio"><input type="radio" name="who" value="old"> <span>מישהו שכבר ברשימה:</span></label>
+        <select class="input" name="id" ${list.length ? '' : 'disabled'}>${options}</select>` : ''}`)}
+      </form>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="claim-form">שיוך</button>`,
+  });
+  m.el.querySelector('#claim-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const d = formData(e.target);
+    if (d.who === 'old' && d.id) {
+      const inf = store.getInfluencers().find(i => i.id === d.id);
+      if (!inf) return;
+      store.saveInfluencer({ ...inf, ref: handle });
+      toast(`הלידים של ${handle} שויכו ל-@${inf.handle}`, 'good');
+    } else {
+      store.saveInfluencer({ handle, status: 'active' });
+      toast(`@${handle} נוסף לרשימה`, 'good');
+    }
+    m.close();
+  });
+}
+
 // ---- the message you send an influencer ---------------------------------
 // What a collaboration is owed is an honest account of what their link
 // brought in: how many, which ones were not real, and in whose words.
@@ -216,8 +261,9 @@ const whenRange = ls => {
 const count = (n, one, many) => (n === 1 ? one : `${fmtNum(n)} ${many}`);
 
 export function buildReport(inf, leads) {
+  const keys = keysOf(inf);
   const mine = leads
-    .filter(l => key(l.influencer) === key(inf.handle))
+    .filter(l => keys.includes(key(l.influencer)))
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   if (!mine.length) return `היי @${inf.handle} – עוד לא הגיעו לידים דרך הלינק.`;
 
