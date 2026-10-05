@@ -84,6 +84,12 @@ export const untouched = l => l.status === 'active' && !lastAction(l);
 export const talkedTo = l => (l.events || []).some(e => e.type === 'talked')
   || stageIndex(l.stage) >= stageIndex('pitched');
 
+// Every time the phone was picked up for this lead — answered or not.
+const CALL_EVENTS = new Set(['attempt', 'talked', 'script']);
+export const calledAt = l => (l.events || [])
+  .filter(e => CALL_EVENTS.has(e.type) || (e.type === 'advanced' && e.stage === 'pitched'))
+  .map(e => e.t);
+
 const MAGNET_NOTE = /^(אישר\/ה קבלת תכנים שיווקיים|לא סימן\/ה הסכמה)/;
 export const viaMagnet = l => l.via === 'magnet'
   || (Boolean(String(l.influencer || '').trim())

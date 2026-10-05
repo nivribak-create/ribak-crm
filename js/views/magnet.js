@@ -5,7 +5,7 @@
 // keeps them apart, and its one real question is whether the traffic an
 // influencer sends is worth the hours it takes to call it.
 
-import { STAGES, stageIndex, reasonLabel, DISQUALIFYING, everSubscribed, viaMagnet, untouched, talkedTo } from '../model.js';
+import { STAGES, stageIndex, reasonLabel, DISQUALIFYING, everSubscribed, viaMagnet, talkedTo, calledAt } from '../model.js';
 import { computeAnalytics, dayReport } from '../analytics.js';
 import { hbars } from '../charts.js';
 import { esc, fmtNum, pct1, fmtDateLong, fmtDateTime, isoDay, addDays } from '../util.js';
@@ -37,12 +37,12 @@ export function render(root, state) {
         ולא ביקשו שתתקשר – ולכן הם נספרים לחוד, ולא מופיעים במספרים שבלוח הבקרה.</p>
     </section>
 
+    ${calledCard(mine, today)}
     ${arrivals(mine, m, today, dayReport(state.leads))}
     ${unrecorded(mine)}
     ${funnelCard(m)}
     ${closeRate(m)}
     ${compare(m, w)}
-    ${todo(mine)}
 
     <section class="panel">
       <header class="panel__head"><div><h2>לפי משפיען</h2>
@@ -83,6 +83,24 @@ function arrivals(mine, m, today, everyone) {
 }
 
 
+
+// ---- how much of the queue has been phoned ------------------------------
+// The question a cold list raises every day: how many of them have I
+// actually rung. Everything else on this screen is downstream of it.
+function calledCard(mine, today) {
+  const called = mine.filter(l => calledAt(l).length);
+  const todayCount = mine.filter(l => calledAt(l).some(t => isoDay(t) === today)).length;
+  const left = mine.length - called.length;
+  const pct = pct1(called.length, mine.length);
+  return `<section class="called">
+    <h2>התקשרת ל-${fmtNum(called.length)} מתוך ${fmtNum(mine.length)} לידים קרים</h2>
+    <div class="called__bar"><i style="width:${Math.max(1, Math.round(pct))}%"></i></div>
+    <p class="called__sub">
+      ${left ? `<b>${fmtNum(left)}</b> עוד לא קיבלו שיחה` : 'עברת על כולם'}
+      ${todayCount ? ` · היום התקשרת ל-${fmtNum(todayCount)}` : ''}
+    </p>
+  </section>`;
+}
 // ---- calls that happened but were never written down --------------------
 // A lead written off without a call recorded is either one you rang and
 // ruled out, or one you never dialled — only you know which, so it is a
@@ -212,24 +230,6 @@ function compare(m, w) {
       <b>% מהשיחות</b> אומר כמה טוב אתה סוגר את מי שענה לך – זו ההשוואה ההוגנת בין קר לחם.
       <b>% מכל הלידים</b> כולל גם את מי שעוד לא התקשרת אליו, ולכן הוא נמוך כל עוד יש תור.
       ${gap && Number(gap) > 1 ? `<br>כרגע שיחה עם ליד חם נסגרת פי ${esc(gap)} יותר מאשר עם ליד קר.` : ''}
-    </p>
-  </section>`;
-}
-
-// ---- what is waiting ----------------------------------------------------
-function todo(mine) {
-  const waiting = mine.filter(untouched);
-  if (!waiting.length) {
-    return `<section class="conv conv--good"><h2>אין אף אחד שלא נגעת בו</h2>
-      <p class="conv__body">כל הלידים הקרים שנכנסו כבר קיבלו טיפול.</p></section>`;
-  }
-  const oldest = waiting.reduce((a, b) => (a.createdAt < b.createdAt ? a : b));
-  return `<section class="conv conv--warn">
-    <h2>מחכים לשיחה ראשונה</h2>
-    <p class="conv__big">${fmtNum(waiting.length)}</p>
-    <p class="conv__body">
-      לידים קרים שעוד לא נגעת בהם. הוותיק מביניהם נכנס ${esc(fmtDateLong(oldest.createdAt))}.
-      <a href="#/pipeline">לפייפליין ←</a>
     </p>
   </section>`;
 }

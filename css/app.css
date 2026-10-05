@@ -1150,3 +1150,8 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .mfunnel__n { font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .mfunnel__row { grid-template-columns: 5.5rem 1fr auto 2.6rem; gap: 7px; } }
 .day__scope { font-size: 12.5px; padding: 0 2px 10px; margin-top: -4px; }
+.called { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 12px; }
+.called h2 { font-size: 20px; margin-bottom: 12px; }
+.called__bar { background: var(--line); border-radius: 999px; height: 12px; overflow: hidden; }
+.called__bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.called__sub { color: var(--ink-2); font-size: 13.5px; margin-top: 10px; }
