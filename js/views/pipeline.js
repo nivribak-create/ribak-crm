@@ -140,16 +140,32 @@ function openParkDialog(lead) {
 // A lead you have already touched today has had its turn, so it sinks to
 // the bottom of its column and the top of the board is always the work
 // still waiting.
+// Everything a lead arrives with — the note an automation attaches about
+// what was written or whether marketing was agreed to — carries the moment
+// the lead was created, and none of it is something you did. Only what
+// happened after that counts as having handled the lead.
+function lastAction(l) {
+  const born = l.events.find(e => e.type === 'created' || e.type === 'imported');
+  const t0 = born ? new Date(born.t).getTime() : 0;
+  for (let i = l.events.length - 1; i >= 0; i--) {
+    const e = l.events[i];
+    if (e.type === 'created' || e.type === 'imported') continue;
+    if (new Date(e.t).getTime() - t0 <= 1000) continue;
+    return e;
+  }
+  return null;
+}
+
 function handledToday(l, today) {
-  const last = l.events[l.events.length - 1];
-  if (!last || last.type === 'created' || last.type === 'imported') return false;
-  return daysBetween(last.t, today) === 0;
+  const last = lastAction(l);
+  return Boolean(last) && daysBetween(last.t, today) === 0;
 }
 
 function sortKey(l, today) {
-  if (handledToday(l, today)) {
+  const acted = lastAction(l);
+  if (acted && daysBetween(acted.t, today) === 0) {
     // among those, the one touched longest ago comes first
-    return 10000 - (Date.now() - new Date(l.events[l.events.length - 1].t)) / 3.6e6;
+    return 10000 - (Date.now() - new Date(acted.t)) / 3.6e6;
   }
   // overdue first, then due today, then oldest in stage
   if (l.nextAt) { const d = daysBetween(today, l.nextAt); if (d <= 0) return d - 1000; return d; }
