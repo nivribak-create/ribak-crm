@@ -77,6 +77,13 @@ export function lastAction(l) {
 }
 export const untouched = l => l.status === 'active' && !lastAction(l);
 
+// You spoke to this person — whether it turned into a pitch or ended with
+// "wrong number". Separate from having pitched, because a lead you ruled
+// out on the phone should count as work done without counting as a sales
+// call you failed to close.
+export const talkedTo = l => (l.events || []).some(e => e.type === 'talked')
+  || stageIndex(l.stage) >= stageIndex('pitched');
+
 const MAGNET_NOTE = /^(אישר\/ה קבלת תכנים שיווקיים|לא סימן\/ה הסכמה)/;
 export const viaMagnet = l => l.via === 'magnet'
   || (Boolean(String(l.influencer || '').trim())
@@ -174,4 +181,5 @@ export const EVENT_LABELS = {
   edited:   'פרטים עודכנו',
   imported: 'יובא מרשימה',
   script:   'תסריט שיחה',
+  talked:   'שיחה טלפונית',
 };

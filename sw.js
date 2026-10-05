@@ -1,7 +1,7 @@
 // Network-first service worker: the app always tries the network, and
 // falls back to the last cached copy when offline. Bump VERSION on deploy
 // to drop stale caches.
-const VERSION = 'ribak-crm-v31';
+const VERSION = 'ribak-crm-v32';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest', './icons/icon.svg',
   './js/app.js', './js/model.js', './js/util.js', './js/store.js', './js/analytics.js', './js/sample.js',

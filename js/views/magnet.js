@@ -5,7 +5,7 @@
 // keeps them apart, and its one real question is whether the traffic an
 // influencer sends is worth the hours it takes to call it.
 
-import { STAGES, stageIndex, reasonLabel, DISQUALIFYING, everSubscribed, viaMagnet, untouched } from '../model.js';
+import { STAGES, stageIndex, reasonLabel, DISQUALIFYING, everSubscribed, viaMagnet, untouched, talkedTo } from '../model.js';
 import { computeAnalytics } from '../analytics.js';
 import { hbars } from '../charts.js';
 import { esc, fmtNum, pct1, fmtDateLong, isoDay, addDays } from '../util.js';
@@ -82,7 +82,8 @@ function funnelCard(m) {
   const at = id => m.funnel[stageIndex(id)].reached;
   const steps = [
     { label: 'נכנסו', n: m.total },
-    { label: 'דיברת איתם', n: at('pitched') },
+    { label: 'דיברת איתם', n: m.leads.filter(talkedTo).length },
+    { label: 'שיחת מכירה', n: at('pitched') },
     { label: 'שבוע ניסיון', n: at('trial') },
     { label: 'מנוי', n: m.funnel[stageIndex('subscribed')].reached },
   ];
@@ -203,7 +204,7 @@ function byInfluencer(mine) {
       total: ls.length,
       dq,
       real,
-      talked: ls.filter(l => stageIndex(l.stage) >= stageIndex('pitched')).length,
+      talked: ls.filter(talkedTo).length,
       trial: ls.filter(l => stageIndex(l.stage) >= stageIndex('trial')).length,
       won: ls.filter(everSubscribed).length,
       conv: pct1(ls.filter(l => stageIndex(l.stage) >= stageIndex('trial')).length, real),

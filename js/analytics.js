@@ -43,7 +43,7 @@ export function dayReport(leads, date = new Date()) {
     ));
     if (!today.length) continue;
     // one conversation per lead per day, however it was recorded
-    const hadCall = today.some(e => e.type === 'script' || (e.type === 'advanced' && e.stage === 'pitched'));
+    const hadCall = today.some(e => e.type === 'script' || e.type === 'talked' || (e.type === 'advanced' && e.stage === 'pitched'));
     const noAnswer = today.filter(e => e.type === 'attempt').length;
     if (hadCall) fullCalls++;
     dials += noAnswer + (hadCall ? 1 : 0);

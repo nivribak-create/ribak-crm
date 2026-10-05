@@ -329,6 +329,15 @@ export function logAttempt(id, channel = 'call') {
   });
 }
 
+// A call that happened, recorded without moving the lead anywhere.
+export function logTalk(id, at = null) {
+  patchLead(id, l => {
+    if ((l.events || []).some(e => e.type === 'talked')) return;
+    l.events.push({ t: at || nowIso(), type: 'talked', stage: l.stage });
+    l.events.sort((a, b) => (a.t < b.t ? -1 : 1));
+  });
+}
+
 export function deleteLead(id) {
   commit(state.leads.filter(l => l.id !== id), state.settings, { remove: [id] });
 }

@@ -91,6 +91,7 @@ export function openLostDialog(lead) {
         הוא לא ייחשב ככישלון מכירה, כי מלכתחילה לא הייתה כאן עסקה אפשרית.
         בחר בה רק אם זה באמת המצב. מי ששמע אותך ואמר לא – מגיעה לו סיבה אמיתית.
       </p>
+      <label class="switch"><input type="checkbox" name="talked" checked><span>דיברתי איתו בטלפון</span></label>
       ${field('הערה (לא חובה)', `<input class="input" name="note" placeholder="למשל: אמר שיחזור אחרי החגים">`)}
     </form>`;
   const m = openModal({
@@ -107,6 +108,9 @@ export function openLostDialog(lead) {
     e.preventDefault();
     const d = formData(e.target);
     if (!d.reason) { toast('בחר סיבה', 'warn'); return; }
+    // Ruling someone out on the phone is work, and the day's call count
+    // should show it even though nothing was sold.
+    if (d.talked) store.logTalk(lead.id);
     store.markLost(lead.id, d.reason, d.note);
     toast(`${lead.name} סומן כאבוד – ${reasonLabel(d.reason)}`);
     m.close();
@@ -128,6 +132,7 @@ export function openChurnDialog(lead) {
         <summary>סיבות נוספות</summary>
         <div class="choices">${LOST_REASONS.filter(r => !r.from.includes('subscribed')).map(radio).join('')}</div>
       </details>
+      <label class="switch"><input type="checkbox" name="talked" checked><span>דיברתי איתו בטלפון</span></label>
       ${field('הערה (לא חובה)', `<input class="input" name="note" placeholder="למשל: אמר שיחזור אחרי החגים">`)}
     </form>`;
   const m = openModal({
@@ -366,6 +371,7 @@ function paintDrawer(panel) {
     if (ev.type === 'churned') text = `המנוי הופסק · ${reasonLabel(ev.reason)}`;
     if (ev.type === 'moved') text = `הועבר ל${STAGE_BY_ID[ev.stage]?.label || ''}`;
     if (ev.type === 'attempt') text = `ניסיון ${ev.channel === 'whatsapp' ? 'בוואטסאפ' : 'טלפוני'} ללא מענה`;
+    if (ev.type === 'talked') text = 'שיחה טלפונית';
     if (ev.type === 'note') text = ev.text;
     return `<li class="tl__item tl__item--${ev.type}">
       <span class="tl__dot"></span>
