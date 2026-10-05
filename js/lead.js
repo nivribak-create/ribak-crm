@@ -1,5 +1,5 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
@@ -221,7 +221,10 @@ export async function remove(lead) {
 // Buttons that appear on cards and in the drawer.
 export function actionButtons(lead, { compact = false } = {}) {
   if (lead.status === 'lost' || lead.status === 'churned') {
-    return `<button class="btn btn--sm" data-act="restore" data-id="${lead.id}">↩ החזר לפייפליין</button>`;
+    // A lead ruled out on the phone is often marked lost without anything
+    // recording that the call happened, so it can still be said afterwards.
+    return `<button class="btn btn--sm" data-act="restore" data-id="${lead.id}">↩ החזר לפייפליין</button>
+      ${talkedTo(lead) ? '' : `<button class="btn btn--sm btn--ghost" data-act="talked" data-id="${lead.id}" title="רישום שדיברת איתו בטלפון">☎ דיברתי איתו</button>`}`;
   }
   if (lead.status === 'won') {
     return `
@@ -268,6 +271,7 @@ export function handleAction(e) {
     case 'subscribe': subscribeNow(lead); break;
     case 'goto': goToStage(lead, b.dataset.to); break;
     case 'restore': restore(lead); break;
+    case 'talked': store.logTalk(lead.id); toast(`נרשמה שיחה עם ${lead.name}`, 'good'); break;
     case 'edit': openLeadForm(lead); break;
     case 'delete': remove(lead); break;
     case 'open': openDrawer(lead.id); break;
