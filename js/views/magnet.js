@@ -38,6 +38,7 @@ export function render(root, state) {
 
     ${arrivals(mine, m, today)}
     ${funnelCard(m)}
+    ${closeRate(m)}
     ${compare(m, w)}
     ${todo(mine)}
 
@@ -101,31 +102,63 @@ function funnelCard(m) {
   </section>`;
 }
 
+// ---- how many of the calls close ----------------------------------------
+// The share of all cold leads that bought says more about how many you have
+// got round to calling than about whether they buy. Out of the ones you
+// actually spoke to is the number that answers that.
+function closeRate(m) {
+  const c = m.sellTrial;
+  if (!c.from) {
+    return `<section class="conv">
+      <h2>יחס סגירה</h2>
+      <p class="conv__body">עוד לא ניהלת שיחת מכירה עם אף ליד קר, אז אין עדיין מה להשוות.
+        אחרי 20–30 שיחות יהיה כאן מספר שאפשר לסמוך עליו.</p>
+    </section>`;
+  }
+  const tone = c.pct >= 30 ? 'good' : c.pct >= 15 ? 'warn' : 'bad';
+  const sub = m.sellSub;
+  return `<section class="conv conv--${tone}">
+    <h2>יחס סגירה</h2>
+    <p class="conv__big">${c.pct}%</p>
+    <p class="conv__body">
+      <b>${fmtNum(c.to)}</b> מתוך <b>${fmtNum(c.from)}</b> הלידים הקרים שניהלת איתם שיחת מכירה סגרו שבוע ניסיון.
+      ${c.lost ? `${fmtNum(c.lost)} לא סגרו.` : ''}
+      ${sub.from ? `<br>מתוכם ${fmtNum(sub.to)} מתוך ${fmtNum(sub.from)} שקיבלו את האוכל המשיכו למנוי (${sub.pct}%).` : ''}
+    </p>
+  </section>`;
+}
+
 // ---- cold against warm --------------------------------------------------
 function compare(m, w) {
   const row = (label, a) => `
     <tr>
       <td>${esc(label)}</td>
       <td class="num">${fmtNum(a.toTrial.from)}</td>
+      <td class="num">${fmtNum(a.sellTrial.from)}</td>
       <td class="num">${fmtNum(a.toTrial.to)}</td>
-      <td class="num"><b class="${a.toTrial.pct >= 10 ? 'good' : ''}">${a.toTrial.pct}%</b></td>
+      <td class="num"><b class="${a.sellTrial.pct >= 30 ? 'good' : ''}">${a.sellTrial.from ? `${a.sellTrial.pct}%` : '–'}</b></td>
+      <td class="num">${a.toTrial.pct}%</td>
     </tr>`;
-  const gap = w.toTrial.pct && m.toTrial.pct
-    ? (w.toTrial.pct / m.toTrial.pct).toFixed(1) : null;
+  const gap = w.sellTrial.from && m.sellTrial.from && m.sellTrial.pct
+    ? (w.sellTrial.pct / m.sellTrial.pct).toFixed(1) : null;
   return `<section class="panel">
     <header class="panel__head"><div><h2>קר מול חם</h2>
-      <p class="muted">כמה מכל סוג ליד הגיעו לשבוע ניסיון. לידים שנפסלו כלא רלוונטיים לא נספרים.</p></div></header>
+      <p class="muted">לידים שנפסלו כלא רלוונטיים לא נספרים באף עמודה</p></div></header>
     <div class="table-wrap"><table class="table">
-      <thead><tr><th>סוג</th><th class="num">לידים</th><th class="num">ניסיון</th><th class="num">המרה</th></tr></thead>
+      <thead><tr>
+        <th>סוג</th><th class="num">לידים</th><th class="num">שיחות מכירה</th><th class="num">סגרו ניסיון</th>
+        <th class="num">% מהשיחות</th><th class="num">% מכל הלידים</th>
+      </tr></thead>
       <tbody>
         ${row('קרים – מהמגנט', m)}
         ${row('חמים – פנו בעצמם', w)}
       </tbody>
     </table></div>
-    ${gap && Number(gap) > 1
-      ? `<p class="panel__note">ליד חם שווה פי ${esc(gap)} מליד קר. אם שעה של חיוגים מביאה את אותו מספר שיחות,
-          כדאי שהיא תלך קודם לחמים.</p>`
-      : ''}
+    <p class="panel__note">
+      <b>% מהשיחות</b> אומר כמה טוב אתה סוגר את מי שענה לך – זו ההשוואה ההוגנת בין קר לחם.
+      <b>% מכל הלידים</b> כולל גם את מי שעוד לא התקשרת אליו, ולכן הוא נמוך כל עוד יש תור.
+      ${gap && Number(gap) > 1 ? `<br>כרגע שיחה עם ליד חם נסגרת פי ${esc(gap)} יותר מאשר עם ליד קר.` : ''}
+    </p>
   </section>`;
 }
 
