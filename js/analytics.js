@@ -3,7 +3,7 @@
 // so "conversion in the last 30 days" means "of leads that came in during
 // the last 30 days, how many closed".
 
-import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf, DISQUALIFYING } from './model.js';
+import { STAGES, stageIndex, LOST_REASONS, reasonLabel, SOURCES, everSubscribed, OUTCOMES, outcomeOf, DISQUALIFYING, viaMagnet } from './model.js';
 import { dayStart, addDays, daysBetween, pct1, nextDeadline, isoDay, isParked } from './util.js';
 
 export const RANGES = [
@@ -45,7 +45,15 @@ export function dayReport(leads, date = new Date()) {
   return { arrived, dials, fullCalls, trialCloses, subCloses, closes: trialCloses + subCloses };
 }
 
-export function computeAnalytics(allLeads, filters = {}) {
+// cohort: 'magnet' – only the cold leads a gateway link brought in,
+//         'warm'   – everyone else, 'all' (default) – both together.
+const cohortOf = (leads, cohort) => (
+  cohort === 'magnet' ? leads.filter(viaMagnet)
+    : cohort === 'warm' ? leads.filter(l => !viaMagnet(l))
+      : leads);
+
+export function computeAnalytics(everyLead, filters = {}) {
+  const allLeads = cohortOf(everyLead, filters.cohort);
   const leads = filterLeads(allLeads, filters);
   const n = leads.length;
   const sold = leads.filter(everSubscribed).length;      // ever became a subscriber

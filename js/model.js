@@ -53,6 +53,35 @@ export const reasonLabel = id => (REASON_BY_ID[id] || REASON_BY_ID.other).label;
 // about how well the selling works, so the funnel report sets them aside.
 export const DISQUALIFYING = new Set(['invalid', 'irrelevant', 'out_of_area']);
 
+// Someone who filled in a form behind an influencer's link is a cold lead:
+// they never asked about the food, they wanted whatever the link promised,
+// and nobody has spoken to them. Mixing them in with people who came asking
+// makes both numbers lie, so they are counted apart.
+// Leads that came in before the server started stamping `via` are
+// recognised by the consent line only the gateway writes.
+// Everything a lead arrives with — the note an automation attaches about
+// what was written or whether marketing was agreed to — carries the moment
+// it was created, and none of it is something you did. Only what happened
+// after that counts as the lead having been worked.
+export function lastAction(l) {
+  const events = l.events || [];
+  const born = events.find(e => e.type === 'created' || e.type === 'imported');
+  const t0 = born ? new Date(born.t).getTime() : 0;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.type === 'created' || e.type === 'imported') continue;
+    if (new Date(e.t).getTime() - t0 <= 1000) continue;
+    return e;
+  }
+  return null;
+}
+export const untouched = l => l.status === 'active' && !lastAction(l);
+
+const MAGNET_NOTE = /^(אישר\/ה קבלת תכנים שיווקיים|לא סימן\/ה הסכמה)/;
+export const viaMagnet = l => l.via === 'magnet'
+  || (Boolean(String(l.influencer || '').trim())
+      && (l.events || []).some(e => e.type === 'note' && MAGNET_NOTE.test(e.text || '')));
+
 export const LEGACY_REASONS = {
   wa_no_reply: 'no_answer', call_no_answer: 'no_answer', fu_no_answer: 'no_answer',
   call_not_int: 'thinking', fu_not_int: 'thinking', trial_no_close: 'price',

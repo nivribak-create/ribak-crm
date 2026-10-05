@@ -1,4 +1,4 @@
-import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE } from '../model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, isParked, parseDay, fmtDateLong, endOfWeek, isoDay, addDays } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
 import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
@@ -140,22 +140,6 @@ function openParkDialog(lead) {
 // A lead you have already touched today has had its turn, so it sinks to
 // the bottom of its column and the top of the board is always the work
 // still waiting.
-// Everything a lead arrives with — the note an automation attaches about
-// what was written or whether marketing was agreed to — carries the moment
-// the lead was created, and none of it is something you did. Only what
-// happened after that counts as having handled the lead.
-function lastAction(l) {
-  const born = l.events.find(e => e.type === 'created' || e.type === 'imported');
-  const t0 = born ? new Date(born.t).getTime() : 0;
-  for (let i = l.events.length - 1; i >= 0; i--) {
-    const e = l.events[i];
-    if (e.type === 'created' || e.type === 'imported') continue;
-    if (new Date(e.t).getTime() - t0 <= 1000) continue;
-    return e;
-  }
-  return null;
-}
-
 function handledToday(l, today) {
   const last = lastAction(l);
   return Boolean(last) && daysBetween(last.t, today) === 0;

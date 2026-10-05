@@ -1,4 +1,4 @@
-import { STAGE_BY_ID, SOURCES, OUTCOMES } from '../model.js';
+import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet } from '../model.js';
 import { computeAnalytics, RANGES } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, isParked } from '../util.js';
@@ -11,11 +11,15 @@ const ui = {
 };
 
 export function render(root, state) {
-  const a = computeAnalytics(state.leads, ui);
+  // Cold leads from a magnet have their own screen; counting them here
+  // would bury the people who came asking under people who never did.
+  const a = computeAnalytics(state.leads, { ...ui, cohort: 'warm' });
+  const cold = state.leads.filter(viaMagnet).length;
   const hasAny = state.leads.length > 0;
 
   root.innerHTML = `
     ${!hasAny ? emptyState() : ''}
+    ${cold ? `<p class="cold-note">${fmtNum(cold)} לידים קרים מהמגנט נספרים בנפרד · <a href="#/magnet">למסך המגנט ←</a></p>` : ''}
 
     ${hasAny ? dayCard(a) : ''}
     ${hasAny ? trialCard(a) : ''}

@@ -9,6 +9,7 @@ import * as pipeline from './views/pipeline.js';
 import * as leads from './views/leads.js';
 import * as triage from './views/triage.js';
 import * as influencers from './views/influencers.js';
+import * as magnet from './views/magnet.js';
 
 const VIEWS = {
   dashboard: { title: 'לוח בקרה', render: dashboard.render },
@@ -16,6 +17,7 @@ const VIEWS = {
   leads:     { title: 'לידים',     render: leads.render },
   triage:    { title: 'מיון מהיר', render: triage.render },
   influencers: { title: 'משפיענים', render: influencers.render },
+  magnet:    { title: 'מגנט',      render: magnet.render },
 };
 
 const main = document.getElementById('view');

@@ -343,6 +343,9 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   }
   const lead = {
     id: newId(), name, phone, source, influencer,
+    // A form behind an influencer's link: a cold lead, counted apart from
+    // the people who came asking about the food.
+    via: influencer ? 'magnet' : '',
     notes: String(b.notes || '').trim().slice(0, 500) || (username ? `@${username}` : ''),
     createdAt: now, updatedAt: now,
     stage: 'new', status: 'active', lostReason: null, lostAt: null,

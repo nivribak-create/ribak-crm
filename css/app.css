@@ -1135,3 +1135,17 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .strays__row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .radio { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; cursor: pointer; }
 .radio input { margin-top: 3px; }
+
+/* ---- magnet: cold leads from an influencer's link --------------------- */
+.cold-note { background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--radius); padding: 9px 12px; margin-bottom: 12px; color: var(--ink-2); font-size: 13.5px; }
+.panel--intro { padding: 16px 18px; }
+.panel--intro h2 { font-size: 18px; margin-bottom: 4px; }
+.panel--intro p { max-width: 70ch; }
+.panel__note { color: var(--muted); font-size: 12.5px; padding: 10px 14px 2px; }
+.mfunnel { display: grid; gap: 8px; padding: 4px 0 2px; }
+.mfunnel__row { display: grid; grid-template-columns: 7.5rem 1fr auto 3rem; align-items: center; gap: 10px; }
+.mfunnel__label { font-size: 13.5px; color: var(--ink-2); }
+.mfunnel__bar { background: var(--line); border-radius: 999px; height: 10px; overflow: hidden; }
+.mfunnel__bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.mfunnel__n { font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .mfunnel__row { grid-template-columns: 5.5rem 1fr auto 2.6rem; gap: 7px; } }

@@ -421,6 +421,7 @@ function normalizeLead(raw) {
     phone: cleanPhone(raw.phone),
     source,
     influencer: String(raw.influencer || '').trim(),
+    via: raw.via === 'magnet' ? 'magnet' : '',
     owner: String(raw.owner || '').trim(),
     notes: String(raw.notes || ''),
     createdAt: t,
