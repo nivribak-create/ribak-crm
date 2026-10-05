@@ -10,6 +10,7 @@ import { computeAnalytics } from '../analytics.js';
 import { hbars } from '../charts.js';
 import { esc, fmtNum, pct1, fmtDateLong, isoDay, addDays } from '../util.js';
 import { openDrawer } from '../lead.js';
+import * as store from '../store.js';
 
 export function render(root, state) {
   const mine = state.leads.filter(viaMagnet);
@@ -147,6 +148,17 @@ function todo(mine) {
 }
 
 // ---- per influencer -----------------------------------------------------
+// A lead carries the id from the link it came through, which may be the
+// short form of a handle on the influencers board. Show the name that board
+// shows, so the same person is not read as two.
+function displayName(raw) {
+  const k = String(raw || '').replace(/^@/, '').toLowerCase();
+  const match = store.getInfluencers().find(i => [i.handle, i.ref]
+    .map(x => String(x || '').replace(/^@/, '').toLowerCase())
+    .filter(Boolean).includes(k));
+  return match ? `@${match.handle}` : raw;
+}
+
 function byInfluencer(mine) {
   const names = [...new Set(mine.map(l => l.influencer).filter(Boolean))];
   const rows = names.map(name => {
@@ -154,7 +166,7 @@ function byInfluencer(mine) {
     const dq = ls.filter(l => l.status === 'lost' && DISQUALIFYING.has(l.lostReason)).length;
     const real = ls.length - dq;
     return {
-      name,
+      name: displayName(name),
       total: ls.length,
       dq,
       real,
