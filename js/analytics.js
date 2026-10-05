@@ -32,7 +32,15 @@ export function dayReport(leads, date = new Date()) {
   // leads that arrived on this day, however they got in
   const arrived = leads.filter(l => isoDay(l.createdAt) === day).length;
   for (const l of leads) {
-    const today = l.events.filter(e => !e.imported && isoDay(e.t) === day);
+    const all = l.events.filter(e => !e.imported && isoDay(e.t) === day);
+    if (!all.length) continue;
+    // A lead moved forward and then dragged back the same day was a slip of
+    // the hand or a test, not a day's work. Counting it would hand you a
+    // close you never made and a target you would then miss tomorrow.
+    const today = all.filter((e, i) => !(
+      e.type === 'advanced'
+      && all.slice(i + 1).some(x => x.type === 'moved' && stageIndex(x.stage) < stageIndex(e.stage))
+    ));
     if (!today.length) continue;
     // one conversation per lead per day, however it was recorded
     const hadCall = today.some(e => e.type === 'script' || (e.type === 'advanced' && e.stage === 'pitched'));
