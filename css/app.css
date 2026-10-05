@@ -1128,3 +1128,8 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
   .toolbar > [data-export] { margin-inline-start: 0; }
   .input--search { min-width: 0; flex: 1 1 100%; }
 }
+
+/* Influencers whose handle turns up on leads but who are not on the board yet. */
+.strays { background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
+.strays b { display: block; margin-bottom: 2px; }
+.strays__row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }

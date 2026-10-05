@@ -3,10 +3,10 @@
 // Leads tagged with an influencer's handle feed each card's numbers, so a
 // collaboration is judged by customers rather than by reach.
 
-import { INFLUENCER_STATUSES, INFLUENCER_STATUS_BY_ID, INFLUENCER_SOURCE, everSubscribed, stageIndex, COLLAB_RE, looksLikeCollab, handleFrom } from '../model.js';
+import { INFLUENCER_STATUSES, INFLUENCER_STATUS_BY_ID, INFLUENCER_SOURCE, everSubscribed, stageIndex, COLLAB_RE, looksLikeCollab, handleFrom, reasonLabel, DISQUALIFYING } from '../model.js';
 import * as store from '../store.js';
-import { openModal, confirmDialog, toast, field, formData, copyBtn } from '../ui.js';
-import { esc, fmtNum, pct1, fmtPhone, telLink, waLink, normPhone } from '../util.js';
+import { openModal, confirmDialog, toast, field, formData, copyBtn, copyToClipboard } from '../ui.js';
+import { esc, fmtNum, pct1, fmtPhone, telLink, waLink, normPhone, fmtDateLong } from '../util.js';
 
 // Someone already moved across may have been given a different handle, so
 // the phone number is what reliably says "this one is already handled".
@@ -22,6 +22,7 @@ export function render(root, state) {
   const pending = state.leads.filter(l => looksLikeCollab(l) && !seen(l)).length;
   const stats = statsByHandle(state.leads);
   const cols = INFLUENCER_STATUSES.map(s => ({ status: s, items: list.filter(i => i.status === s.id) }));
+  const strays = untracked(state.leads, list);
   const totals = list.reduce((acc, i) => {
     const s = stats[key(i.handle)];
     if (s) { acc.leads += s.total; acc.won += s.won; }
@@ -37,6 +38,15 @@ export function render(root, state) {
       </span>
     </div>
 
+    ${strays.length ? `
+      <div class="strays">
+        <b>הגיעו לידים ממשפיענים שלא ברשימה.</b>
+        <span class="muted">הוסף אותם כדי לראות כמה כל אחד הביא ולשלוח להם דוח.</span>
+        <div class="strays__row">
+          ${strays.map(([h, n]) => `<button class="btn btn--sm" data-add-handle="${esc(h)}">+ @${esc(h)} · ${fmtNum(n)}</button>`).join('')}
+        </div>
+      </div>` : ''}
+
     ${list.length ? '' : `
       <div class="hero-empty">
         <h2>רשימת המשפיענים ריקה</h2>
@@ -50,12 +60,24 @@ export function render(root, state) {
 
   root.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm()));
   root.querySelector('[data-pull]')?.addEventListener('click', () => openPull(state));
+  root.querySelectorAll('[data-add-handle]').forEach(b => b.addEventListener('click', () => {
+    const handle = b.dataset.addHandle;
+    store.saveInfluencer({ handle, status: 'active' });
+    toast(`@${handle} נוסף לרשימה`, 'good');
+  }));
   root.onclick = e => {
     if (e.target.closest('a')) { e.stopPropagation(); return; }
     const move = e.target.closest('[data-move]');
     if (move) {
       e.stopPropagation();
       store.setInfluencerStatus(move.dataset.id, move.dataset.move);
+      return;
+    }
+    const rep = e.target.closest('[data-report]');
+    if (rep) {
+      e.stopPropagation();
+      const inf = store.getInfluencers().find(i => i.id === rep.dataset.report);
+      if (inf) openReport(inf, state.leads);
       return;
     }
     const card = e.target.closest('.icard');
@@ -67,6 +89,20 @@ const key = h => String(h || '').trim().replace(/^@/, '').toLowerCase();
 
 // Leads carry the influencer handle as free text, so match case-insensitively
 // and ignore a leading @ either side.
+// Leads come in tagged with the handle from the link they clicked, and that
+// person may not be on this board at all — without this their leads are
+// counted nowhere and nobody can send them a report.
+function untracked(leads, list) {
+  const known = new Set(list.map(i => key(i.handle)));
+  const found = new Map();
+  for (const l of leads) {
+    const k = key(l.influencer);
+    if (!k || known.has(k)) continue;
+    found.set(k, (found.get(k) || 0) + 1);
+  }
+  return [...found].sort((a, b) => b[1] - a[1]);
+}
+
 function statsByHandle(leads) {
   const out = {};
   for (const l of leads) {
@@ -121,6 +157,7 @@ function card(inf, s) {
     ${inf.notes ? `<p class="card__notes">${esc(inf.notes)}</p>` : ''}
     <div class="card__actions">
       ${next ? `<button class="btn btn--sm btn--primary" data-move="${next.id}" data-id="${inf.id}">→ ${esc(next.short)}</button>` : ''}
+      ${s ? `<button class="btn btn--sm" data-report="${inf.id}">✉ דוח למשפיען</button>` : ''}
       ${inf.status !== 'rejected' ? `<button class="btn btn--sm btn--ghost btn--lost" data-move="rejected" data-id="${inf.id}">לא יצא</button>` : ''}
     </div>
   </article>`;
@@ -163,6 +200,92 @@ function openForm(inf = null) {
   });
 }
 
+
+
+// ---- the message you send an influencer ---------------------------------
+// What a collaboration is owed is an honest account of what their link
+// brought in: how many, which ones were not real, and in whose words.
+const hhmm = t => String(t).slice(11, 16);
+const whenRange = ls => {
+  const days = [...new Set(ls.map(l => String(l.createdAt).slice(0, 10)))];
+  const first = ls[0], last = ls[ls.length - 1];
+  return days.length === 1
+    ? `${fmtDateLong(first.createdAt)}, ${hhmm(first.createdAt)}–${hhmm(last.createdAt)}`
+    : `${fmtDateLong(first.createdAt)} – ${fmtDateLong(last.createdAt)}`;
+};
+const count = (n, one, many) => (n === 1 ? one : `${fmtNum(n)} ${many}`);
+
+export function buildReport(inf, leads) {
+  const mine = leads
+    .filter(l => key(l.influencer) === key(inf.handle))
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  if (!mine.length) return `היי @${inf.handle} – עוד לא הגיעו לידים דרך הלינק.`;
+
+  // "Not relevant" means it was never an opportunity — a wrong number, a
+  // duplicate, outside the delivery area. Someone who heard the pitch and
+  // said the price was too high was a real lead, and saying otherwise would
+  // blame the influencer for a sale we did not make.
+  const out = mine.filter(l => l.status === 'lost' && DISQUALIFYING.has(l.lostReason));
+  const good = mine.length - out.length;
+  const trial = mine.filter(l => stageIndex(l.stage) >= stageIndex('trial')).length;
+  const won = mine.filter(everSubscribed).length;
+  const working = mine.filter(l => l.status === 'active').length;
+
+  const lines = [`היי @${inf.handle} 🙏`, ''];
+  lines.push(`עברתי על הלידים שהגיעו דרך הלינק שלך – ${count(mine.length, 'ליד אחד', 'לידים')}, ${whenRange(mine)}.`);
+  lines.push('');
+
+  if (!out.length) {
+    lines.push('כולם רלוונטיים, אין אחד לפסול 🙌');
+  } else {
+    lines.push(`${count(out.length, 'אחד לא רלוונטי', 'לא רלוונטיים')}:`);
+    lines.push('');
+    out.forEach((l, i) => {
+      const said = (l.events || []).filter(e => e.type === 'lost' && e.text).pop();
+      lines.push(`${i + 1}. ${l.name} · ${hhmm(l.createdAt)}`);
+      lines.push(`   ${reasonLabel(l.lostReason)}${said ? ` – ${said.text}` : ''}`);
+    });
+    lines.push('');
+    lines.push(`${fmtNum(good)} מתוך ${fmtNum(mine.length)} לידים אמיתיים (${pct1(good, mine.length)}%).`);
+  }
+
+  lines.push('');
+  const progress = [];
+  if (won) progress.push(`${count(won, 'אחד סגר מנוי', 'סגרו מנוי')}`);
+  if (trial) progress.push(`${count(trial, 'אחד סגר שבוע ניסיון', 'סגרו שבוע ניסיון')}`);
+  if (working) progress.push(`${count(working, 'אחד עדיין בטיפול אצלי', 'עדיין בטיפול אצלי')}`);
+  if (progress.length) lines.push(progress.join(', ') + '.');
+  lines.push('');
+  lines.push('תודה!');
+  return lines.join('\n');
+}
+
+function openReport(inf, leads) {
+  const text = buildReport(inf, leads);
+  const m = openModal({
+    title: `דוח ל-@${inf.handle}`,
+    body: `
+      <p class="muted" style="margin-top:0">אפשר לערוך לפני ששולחים.</p>
+      <textarea class="input" id="infl-report" rows="16" dir="rtl">${esc(text)}</textarea>`,
+    footer: `
+      <button class="btn" data-close>סגירה</button>
+      ${inf.phone ? `<a class="btn" id="infl-wa" href="${waLink(inf.phone)}" target="_blank" rel="noopener">וואטסאפ</a>` : ''}
+      <button class="btn btn--primary" data-copy-report>העתקת ההודעה</button>`,
+  });
+  const ta = m.el.querySelector('#infl-report');
+  // WhatsApp takes the message in the link, so it has to follow the edits.
+  const wa = m.el.querySelector('#infl-wa');
+  if (wa) {
+    const base = wa.href.split('?')[0];
+    const sync = () => { wa.href = `${base}?text=${encodeURIComponent(ta.value)}`; };
+    sync();
+    ta.addEventListener('input', sync);
+  }
+  m.el.querySelector('[data-copy-report]').addEventListener('click', () => {
+    if (copyToClipboard(ta.value)) toast('ההודעה הועתקה', 'good');
+    else toast('ההעתקה נכשלה – סמן והעתק ידנית', 'warn');
+  });
+}
 
 // ---- pulling collaborators out of the lead list -------------------------
 function openPull(state) {
