@@ -1,5 +1,5 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo, onColdBoard } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
@@ -189,8 +189,11 @@ export function openToInfluencer(lead) {
 export function advance(lead, to = null) {
   const target = to ? STAGE_BY_ID[to] : nextStage(lead.stage);
   if (!target) return;
+  const left = onColdBoard(lead) && stageIndex(target.id) >= stageIndex('trial');
   store.advanceLead(lead.id, target.id);
-  toast(target.id === FINAL_STAGE ? `🎉 ${lead.name} סגר מנוי!` : `${lead.name} → ${target.label}`, target.id === FINAL_STAGE ? 'good' : '');
+  if (target.id === FINAL_STAGE) toast(`🎉 ${lead.name} סגר מנוי!`, 'good');
+  else if (left) toast(`🎉 ${lead.name} סגר שבוע ניסיון – עבר לפייפליין הראשי`, 'good');
+  else toast(`${lead.name} → ${target.label}`);
 }
 export function attempt(lead) {
   store.logAttempt(lead.id, 'call');

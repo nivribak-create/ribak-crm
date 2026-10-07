@@ -3,6 +3,7 @@ import { generateSample } from './sample.js';
 import { openLeadForm, openDrawer, closeDrawer } from './lead.js';
 import { installTooltips, toast, confirmDialog, openModal, copyToClipboard } from './ui.js';
 import { downloadText, fmtNum, esc } from './util.js';
+import { onColdBoard } from './model.js';
 import { renderInto, uiIdle } from './render.js';
 import * as dashboard from './views/dashboard.js';
 import * as pipeline from './views/pipeline.js';
@@ -14,6 +15,7 @@ import * as magnet from './views/magnet.js';
 const VIEWS = {
   dashboard: { title: 'לוח בקרה', render: dashboard.render },
   pipeline:  { title: 'פייפליין',  render: pipeline.render },
+  cold:      { title: 'לידים קרים', render: pipeline.renderCold },
   leads:     { title: 'לידים',     render: leads.render },
   triage:    { title: 'מיון מהיר', render: triage.render },
   influencers: { title: 'משפיענים', render: influencers.render },
@@ -145,14 +147,21 @@ store.subscribe(state => {
 });
 
 function updateChrome(state) {
-  const el = document.getElementById('badge');
-  const n = state.leads.filter(l => l.status === 'active').length;
-  el.textContent = n ? fmtNum(n) : '';
-  el.hidden = !n;
+  const active = state.leads.filter(l => l.status === 'active');
+  const cold = active.filter(onColdBoard).length;
+  badge('badge', active.length - cold);
+  badge('badge-cold', cold);
   document.getElementById('sample-banner').hidden = !state.settings.sample;
   document.getElementById('logout').hidden = state.mode !== 'remote';
   const mode = document.getElementById('mode');
   mode.hidden = state.mode !== 'local';
+}
+
+function badge(id, n) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = n ? fmtNum(n) : '';
+  el.hidden = !n;
 }
 
 // ---- global controls ----------------------------------------------------

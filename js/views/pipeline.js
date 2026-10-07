@@ -1,24 +1,42 @@
-import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction } from '../model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
 import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
 import { installDrag } from '../dnd.js';
 import * as store from '../store.js';
 
+// Two boards off one piece of code: the main one, and the cold leads an
+// influencer's link brought in, which are a different job — a queue to work
+// through rather than customers moving along.
+const COHORTS = {
+  warm: {
+    belongs: l => !onColdBoard(l),
+    stages: STAGES,
+    note: () => 'לידים שפנו אליך',
+  },
+  cold: {
+    belongs: onColdBoard,
+    stages: STAGES.slice(0, stageIndex('trial')),
+    note: n => `${fmtNum(n)} לידים קרים מהמגנט · מי שסוגר שבוע ניסיון עובר לפייפליין הראשי`,
+  },
+};
+
 const ui = {
   q: '',
+  cohort: 'warm',
   showLost: sessionStorage.getItem('ribak:showLost') === '1',
 };
 
 function boardHtml(state, today) {
+  const cohort = COHORTS[ui.cohort];
   const q = ui.q.trim().toLowerCase();
   const qDigits = q.replace(/\D/g, '');
   const match = l => !q || l.name.toLowerCase().includes(q) || (qDigits && l.phone.replace(/\D/g, '').includes(qDigits)) || (l.notes || '').toLowerCase().includes(q);
-  const leads = state.leads.filter(match);
-  // Anyone due back after this week waits off to the side until their day.
+  const leads = state.leads.filter(cohort.belongs).filter(match);
+  // Anyone due back on a later day waits off to the side until their day.
   const parked = leads.filter(dueLater).sort((a, b) => (a.nextAt < b.nextAt ? -1 : 1));
   const onBoard = leads.filter(l => !dueLater(l));
-  const cols = STAGES.map(s => ({
+  const cols = cohort.stages.map(s => ({
     stage: s,
     leads: onBoard.filter(l => l.stage === s.id && l.status !== 'lost' && l.status !== 'churned')
       .sort((a, b) => sortKey(a, today) - sortKey(b, today)),
@@ -31,7 +49,12 @@ function boardHtml(state, today) {
   };
 }
 
-export function render(root, state) {
+export const render = (root, state) => board(root, state, 'warm');
+export const renderCold = (root, state) => board(root, state, 'cold');
+
+function board(root, state, cohort) {
+  // A search left over from the other board would make this one look empty.
+  if (ui.cohort !== cohort) { ui.cohort = cohort; ui.q = ''; }
   const today = new Date();
   const b = boardHtml(state, today);
 
@@ -39,22 +62,22 @@ export function render(root, state) {
     <div class="toolbar">
       <input class="input input--sm input--search" type="search" placeholder="חיפוש לפי שם או טלפון" value="${esc(ui.q)}" data-q aria-label="חיפוש">
       <label class="switch"><input type="checkbox" data-showlost ${ui.showLost ? 'checked' : ''}><span>הצג אבודים והפסיקו (<span data-lost-count>${fmtNum(b.lostCount)}</span>)</span></label>
-      <span class="toolbar__note muted"><span data-active-count>${fmtNum(b.activeCount)}</span> בטיפול</span>
+      <span class="toolbar__note muted"><span data-active-count>${fmtNum(b.activeCount)}</span> בטיפול · ${esc(COHORTS[cohort].note(b.activeCount))}</span>
     </div>
     <div class="board ${ui.showLost ? 'board--with-lost' : ''}">${b.html}</div>`;
 
   root.querySelector('[data-q]').addEventListener('input', e => {
     ui.q = e.target.value;
-    const board = root.querySelector('.board');
-    const scroll = board.scrollLeft;
+    const boardEl = root.querySelector('.board');
+    const scroll = boardEl.scrollLeft;
     const nb = boardHtml(state, new Date());
-    board.innerHTML = nb.html;
-    board.scrollLeft = scroll;
+    boardEl.innerHTML = nb.html;
+    boardEl.scrollLeft = scroll;
     root.querySelector('[data-lost-count]').textContent = fmtNum(nb.lostCount);
     root.querySelector('[data-active-count]').textContent = fmtNum(nb.activeCount);
   });
   root.querySelector('[data-showlost]').addEventListener('change', e => {
-    ui.showLost = e.target.checked; sessionStorage.setItem('ribak:showLost', ui.showLost ? '1' : '0'); render(root, state);
+    ui.showLost = e.target.checked; sessionStorage.setItem('ribak:showLost', ui.showLost ? '1' : '0'); board(root, state, cohort);
   });
   root.onclick = e => {
     if (e.target.closest('a')) { e.stopPropagation(); return; }

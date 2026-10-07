@@ -84,6 +84,12 @@ export const untouched = l => l.status === 'active' && !lastAction(l);
 export const talkedTo = l => (l.events || []).some(e => e.type === 'talked')
   || stageIndex(l.stage) >= stageIndex('pitched');
 
+// A cold lead stays on its own board only while it is still being sold to.
+// From the trial week on, the work is the same as for anyone who called
+// asking — a delivery on Sunday, a conversion call on Tuesday — so it joins
+// the main board rather than splitting that routine across two screens.
+export const onColdBoard = l => viaMagnet(l) && stageIndex(l.stage) < stageIndex('trial');
+
 // Every time the phone was picked up for this lead — answered or not.
 const CALL_EVENTS = new Set(['attempt', 'talked', 'script']);
 export const calledAt = l => (l.events || [])
