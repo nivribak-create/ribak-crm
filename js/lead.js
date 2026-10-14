@@ -1,11 +1,13 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo, onColdBoard } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo, onColdBoard, deliveryWeek, subscriptionWeek } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
 import { SALES_SCRIPT, visibleFields } from './scripts.js';
 import { preserve } from './render.js';
-import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso, phoneProblem } from './util.js';
+import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso, phoneProblem, sundayOf } from './util.js';
+
+const everSubscribedSafe = l => l.status === 'won' || l.status === 'churned';
 
 // ---- add / edit ---------------------------------------------------------
 export function openLeadForm(lead = null) {
@@ -25,6 +27,10 @@ export function openLeadForm(lead = null) {
         <datalist id="infl-list">${store.knownInfluencers().map(i => `<option value="${esc(i)}"></option>`).join('')}</datalist>
       </label>
       ${field('פעולה הבאה', `<input class="input" type="date" name="nextAt" value="${esc(lead?.nextAt || '')}">`, 'מתי לחזור אליו')}
+      ${isEdit && stageIndex(lead.stage) >= stageIndex('trial')
+    ? field('שבוע המשלוח', `<input class="input" type="date" name="deliveryWeek" value="${esc(deliveryWeek(lead) || '')}">`,
+      'באיזה יום ראשון הוא מקבל את האוכל. המערכת מנחשת לפי התאריכים – שנה כאן אם היא טעתה.')
+    : ''}
       ${field('הערות', `<textarea class="input" name="notes" rows="3" placeholder="מה הוא מחפש, שעות נוחות, כל דבר שיעזור בשיחה">${esc(lead?.notes || '')}</textarea>`)}
     </form>`;
   const m = openModal({
@@ -58,7 +64,12 @@ export function openLeadForm(lead = null) {
       return;
     }
     if (isEdit) {
-      store.updateLead(lead.id, { name: d.name, phone: d.phone, source: d.source, influencer: d.source === INFLUENCER_SOURCE ? d.influencer : '', notes: d.notes, nextAt: d.nextAt || null });
+      // Any day of that week means the Sunday it starts on, and a value
+      // that matches the guess is left unset so the timeline keeps leading.
+      const week = d.deliveryWeek ? sundayOf(`${d.deliveryWeek}T12:00:00`) : '';
+      const patch = { name: d.name, phone: d.phone, source: d.source, influencer: d.source === INFLUENCER_SOURCE ? d.influencer : '', notes: d.notes, nextAt: d.nextAt || null };
+      if ('deliveryWeek' in d) patch.deliveryWeek = week && week !== deliveryWeek({ ...lead, deliveryWeek: '' }) ? week : '';
+      store.updateLead(lead.id, patch);
       toast('הפרטים נשמרו');
     } else {
       store.addLead(d);
@@ -397,6 +408,7 @@ function paintDrawer(panel) {
       <div>
         <h2 class="drawer__name">${esc(lead.name)}</h2>
         <div class="drawer__sub">${statusTag}<span class="muted">נכנס ${fmtDateLong(lead.createdAt)} · ${esc(lead.source)}${lead.influencer ? ' · ' + esc(lead.influencer) : ''}</span></div>
+        ${deliveryWeek(lead) ? `<div class="drawer__week muted">🍲 ${stageIndex(lead.stage) === stageIndex('trial') ? 'מקבל את האוכל' : 'קיבל את האוכל'} ביום ראשון ${esc(fmtDate(deliveryWeek(lead)))}${subscriptionWeek(lead) && !everSubscribedSafe(lead) ? ` · מועמד למנוי של ${esc(fmtDate(subscriptionWeek(lead)))}` : ''}</div>` : ''}
       </div>
     </header>
     <div class="drawer__contact">

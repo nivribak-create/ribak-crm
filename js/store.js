@@ -454,6 +454,7 @@ function normalizeLead(raw) {
     source,
     influencer: String(raw.influencer || '').trim(),
     via: raw.via === 'magnet' ? 'magnet' : '',
+    deliveryWeek: /^\d{4}-\d{2}-\d{2}$/.test(raw.deliveryWeek || '') ? raw.deliveryWeek : '',
     owner: String(raw.owner || '').trim(),
     notes: String(raw.notes || ''),
     createdAt: t,
