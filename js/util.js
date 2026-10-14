@@ -111,6 +111,19 @@ export const dueLater = lead =>
 export const ORDER_DEADLINE_DAY = 3;   // Wednesday
 export const ORDER_DEADLINE_HOUR = 23;
 
+// Food goes out every Sunday, and an order has to be in by the Wednesday
+// 23:00 before it. So a week is named by its delivery Sunday, and whoever
+// got food on the 11th is the one you are selling a subscription to for
+// the 18th.
+export const sundayOf = d => isoDay(addDays(dayStart(d), -dayStart(d).getDay()));
+
+// Which Sunday's delivery a sale made at this moment lands in: the first
+// one after the next deadline.
+export const deliverySundayFor = from => {
+  const wed = nextDeadline(from);
+  return isoDay(addDays(dayStart(wed), (7 - wed.getDay()) % 7 || 7));
+};
+
 export function nextDeadline(from = new Date()) {
   const d = new Date(from);
   const wed = new Date(d);

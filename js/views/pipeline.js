@@ -1,5 +1,5 @@
-import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard } from '../model.js';
-import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays } from '../util.js';
+import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek } from '../model.js';
+import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays, sundayOf } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
 import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
 import { installDrag } from '../dnd.js';
@@ -200,6 +200,16 @@ function column({ stage, leads }, today) {
 // the card shows the influencer instead of the bucket the numbers use.
 const sourceLabel = l => l.influencer || l.source;
 
+// Which Sunday's delivery this card belongs to — the thing that decides
+// which week you are selling them a subscription for.
+function weekTag(l) {
+  const w = deliveryWeek(l);
+  if (!w) return '';
+  const waiting = stageIndex(l.stage) === stageIndex('trial');
+  return `<span class="tag tag--week" title="${waiting ? 'מקבל את האוכל ביום ראשון הזה' : 'קיבל את האוכל ביום ראשון הזה'}">
+    ${waiting ? 'משלוח' : 'אכל'} ${esc(fmtDate(w))}</span>`;
+}
+
 function card(l, today, isFinal) {
   const since = [...l.events].reverse().find(e => e.type === 'advanced' || e.type === 'created');
   const inStage = since ? daysBetween(since.t, today) : 0;
@@ -221,6 +231,7 @@ function card(l, today, isFinal) {
     </div>
     <div class="card__row">
       <span class="muted">${inStage === 0 ? 'היום' : `${inStage} ${inStage === 1 ? 'יום' : 'ימים'} בשלב`}</span>
+      ${weekTag(l)}
       ${l.attempts ? `<span class="tag tag--warn" title="ניסיונות ללא מענה">${l.attempts} ללא מענה</span>` : ''}
       ${l.nextAt ? `<span class="tag ${due < 0 ? 'tag--lost' : due === 0 ? 'tag--warn' : ''}">${esc(dueLabel(l.nextAt))}</span>` : ''}
       ${done ? '<span class="tag tag--done">✓ טופל היום</span>' : ''}

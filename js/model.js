@@ -5,6 +5,8 @@
 // delivered Sunday morning, and the subscription call happens Tuesday —
 // so a lead that closes after Wednesday night waits a full extra week.
 
+import { sundayOf, deliverySundayFor, isoDay, addDays } from './util.js';
+
 export const STAGES = [
   { id: 'new',        label: 'ליד חדש',              short: 'חדש',      done: 'ליד חדש נכנס',       action: null },
   { id: 'followup',   label: 'פולואפ – קיבל שיחה ולא ענה', short: 'פולואפ', done: 'עבר לפולואפ',    action: 'לא ענה לשיחה' },
@@ -83,6 +85,29 @@ export const untouched = l => l.status === 'active' && !lastAction(l);
 // call you failed to close.
 export const talkedTo = l => (l.events || []).some(e => e.type === 'talked')
   || stageIndex(l.stage) >= stageIndex('pitched');
+
+// Which Sunday's delivery this lead belongs to. Read off the timeline
+// rather than stored, so it is right for every lead already in the system:
+// the week food actually went out, or — for someone who has just bought and
+// is waiting — the week it is going to.
+// `deliveryWeek` on the lead overrides it, for the times a card was moved
+// days late and the dates no longer line up.
+export function deliveryWeek(l) {
+  if (l.deliveryWeek) return l.deliveryWeek;
+  const events = l.events || [];
+  const got = events.filter(e => e.type === 'advanced' && e.stage === 'delivered').pop();
+  if (got) return sundayOf(got.t);
+  const sold = events.filter(e => e.type === 'advanced' && e.stage === 'trial').pop();
+  if (sold && stageIndex(l.stage) >= stageIndex('trial')) return deliverySundayFor(new Date(sold.t));
+  return null;
+}
+
+// The Sunday you are selling them a subscription for: the week after the
+// one they got food in.
+export const subscriptionWeek = l => {
+  const w = deliveryWeek(l);
+  return w ? isoDay(addDays(new Date(`${w}T00:00:00`), 7)) : null;
+};
 
 // A cold lead stays on its own board only while it is still being sold to.
 // From the trial week on, the work is the same as for anyone who called

@@ -1,7 +1,7 @@
-import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet } from '../model.js';
+import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed } from '../model.js';
 import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
-import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, isParked } from '../util.js';
+import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, fmtDate, isParked, sundayOf } from '../util.js';
 import { handleAction, openDrawer } from '../lead.js';
 import { copyBtn } from '../ui.js';
 
@@ -25,6 +25,7 @@ export function render(root, state) {
     ${hasAny ? trialCard(a) : ''}
     ${hasAny ? conversionCard(a) : ''}
     ${hasAny ? thisWeek(a) : ''}
+    ${hasAny ? deliveryWeeksCard(state.leads) : ''}
 
     <section class="panel">
       <header class="panel__head"><div><h2>לחזור אליהם היום</h2><p class="muted">לידים בטיפול עם פעולה מתוכננת להיום או באיחור</p></div></header>
@@ -95,6 +96,52 @@ const OUTCOME_CLASS = { open: 'active', subscriber: 'won', churned: 'churn', rep
 
 // The day, counted off the timeline: every dial, every conversation that
 // actually happened, and everything that closed.
+
+// ---- by delivery week ---------------------------------------------------
+// Food goes out on Sundays, so a customer belongs to the Sunday they were
+// fed on, and the subscription you are selling them is for the Sunday after
+// that. Lined up this way, each week's batch can be watched to the end
+// instead of blurring into a running total.
+function deliveryWeeksCard(leads) {
+  const by = new Map();
+  for (const l of leads) {
+    if (stageIndex(l.stage) < stageIndex('delivered')) continue;
+    const w = deliveryWeek(l);
+    if (!w) continue;
+    const row = by.get(w) || { week: w, got: 0, sub: 0, repeat: 0, lost: 0, open: 0 };
+    row.got++;
+    if (everSubscribed(l)) row.sub++;
+    else if (l.status === 'lost' || l.status === 'churned') row.lost++;
+    else if (l.stage === 'repeat') row.repeat++;
+    else row.open++;
+    by.set(w, row);
+  }
+  const rows = [...by.values()].sort((a, b) => (a.week < b.week ? 1 : -1)).slice(0, 8);
+  if (!rows.length) return '';
+  const thisSunday = sundayOf(new Date());
+  return `<section class="panel">
+    <header class="panel__head"><div><h2>לפי שבוע משלוח</h2>
+      <p class="muted">מי שקיבל אוכל בראשון נמכר לו מנוי לראשון שאחריו</p></div></header>
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>משלוח</th><th class="num">קיבלו אוכל</th><th class="num">מנוי</th>
+        <th class="num">שבוע נוסף</th><th class="num">נפלו</th><th class="num">פתוח</th><th class="num">המרה</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr class="${r.week === thisSunday ? 'is-now' : ''}">
+          <td>ראשון ${esc(fmtDate(r.week))}${r.week === thisSunday ? ' <small class="muted">· השבוע</small>' : ''}</td>
+          <td class="num">${fmtNum(r.got)}</td>
+          <td class="num"><b>${fmtNum(r.sub)}</b></td>
+          <td class="num">${r.repeat ? fmtNum(r.repeat) : '–'}</td>
+          <td class="num">${r.lost ? fmtNum(r.lost) : '–'}</td>
+          <td class="num">${r.open ? `<b class="warn">${fmtNum(r.open)}</b>` : '–'}</td>
+          <td class="num"><b class="${pct1(r.sub, r.got) >= 50 ? 'good' : ''}">${pct1(r.sub, r.got)}%</b></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+    <p class="panel__note">"פתוח" הם אנשים שקיבלו אוכל ועוד לא אמרו כן או לא – הם מחכים להחלטה שלך, לא שלהם.</p>
+  </section>`;
+}
 function dayCard(a, everyone) {
   const t = a.today;
   const y = a.yesterday;
