@@ -80,6 +80,41 @@ export function openLeadForm(lead = null) {
 }
 
 // ---- lost ---------------------------------------------------------------
+// Which Sunday someone eats on moves around — a week postponed, a card
+// marked late — and it decides which week you are selling them, so it is
+// changed from the card itself rather than buried in the edit form.
+export function openWeekDialog(lead) {
+  const current = deliveryWeek(lead) || sundayOf(new Date());
+  const sundays = [-1, 0, 1, 2].map(n => sundayOf(new Date(`${current}T12:00:00`).getTime() + n * 7 * 86400000));
+  const m = openModal({
+    title: `שבוע המשלוח של ${lead.name}`,
+    body: `
+      <p class="modal__text">באיזה יום ראשון ${stageIndex(lead.stage) === stageIndex('trial') ? 'הוא מקבל' : 'הוא קיבל'} את האוכל?
+        המנוי שתמכור לו הוא לראשון שאחריו.</p>
+      <form class="form" id="week-form">
+        <div class="choices">
+          ${sundays.map(d => `<label class="choice">
+            <input type="radio" name="week" value="${esc(d)}" ${d === current ? 'checked' : ''}>
+            <span>ראשון ${esc(fmtDate(d))}</span>
+          </label>`).join('')}
+        </div>
+        ${field('או תאריך אחר', `<input class="input" type="date" name="other">`, 'כל יום בשבוע – נשמר כיום ראשון שלו')}
+      </form>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="week-form">שמירה</button>`,
+  });
+  m.el.querySelector('#week-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const d = formData(e.target);
+    const week = d.other ? sundayOf(`${d.other}T12:00:00`) : d.week;
+    if (!week) return;
+    // Matching what the timeline already says needs no override.
+    const guess = deliveryWeek({ ...lead, deliveryWeek: '' });
+    store.updateLead(lead.id, { deliveryWeek: week === guess ? '' : week });
+    toast(`${lead.name} · משלוח ביום ראשון ${fmtDate(week)}`, 'good');
+    m.close();
+  });
+}
+
 export function openLostDialog(lead) {
   const relevant = LOST_REASONS.filter(r => r.from.includes(lead.stage));
   const others = LOST_REASONS.filter(r => !r.from.includes(lead.stage));
@@ -286,6 +321,7 @@ export function handleAction(e) {
     case 'goto': goToStage(lead, b.dataset.to); break;
     case 'restore': restore(lead); break;
     case 'talked': store.logTalk(lead.id); toast(`נרשמה שיחה עם ${lead.name}`, 'good'); break;
+    case 'week': openWeekDialog(lead); break;
     case 'edit': openLeadForm(lead); break;
     case 'delete': remove(lead); break;
     case 'open': openDrawer(lead.id); break;
@@ -408,7 +444,8 @@ function paintDrawer(panel) {
       <div>
         <h2 class="drawer__name">${esc(lead.name)}</h2>
         <div class="drawer__sub">${statusTag}<span class="muted">נכנס ${fmtDateLong(lead.createdAt)} · ${esc(lead.source)}${lead.influencer ? ' · ' + esc(lead.influencer) : ''}</span></div>
-        ${deliveryWeek(lead) ? `<div class="drawer__week muted">🍲 ${stageIndex(lead.stage) === stageIndex('trial') ? 'מקבל את האוכל' : 'קיבל את האוכל'} ביום ראשון ${esc(fmtDate(deliveryWeek(lead)))}${subscriptionWeek(lead) && !everSubscribedSafe(lead) ? ` · מועמד למנוי של ${esc(fmtDate(subscriptionWeek(lead)))}` : ''}</div>` : ''}
+        ${deliveryWeek(lead) ? `<div class="drawer__week muted">🍲 ${stageIndex(lead.stage) === stageIndex('trial') ? 'מקבל את האוכל' : 'קיבל את האוכל'} ביום ראשון ${esc(fmtDate(deliveryWeek(lead)))}${subscriptionWeek(lead) && !everSubscribedSafe(lead) ? ` · מועמד למנוי של ${esc(fmtDate(subscriptionWeek(lead)))}` : ''}
+          <button class="linkish" data-act="week" data-id="${lead.id}">שנה שבוע</button></div>` : ''}
       </div>
     </header>
     <div class="drawer__contact">

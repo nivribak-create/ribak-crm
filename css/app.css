@@ -1160,3 +1160,4 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .table .warn { color: var(--warn, #B4690E); }
 .tag--week { background: var(--accent-soft); color: var(--accent-soft-ink); }
 .drawer__week { font-size: 13px; margin-top: 4px; }
+.linkish { background: none; border: 0; padding: 0 4px; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
