@@ -125,7 +125,8 @@ function deliveryWeeksCard(leads) {
     <div class="table-wrap"><table class="table">
       <thead><tr>
         <th>משלוח</th><th class="num">קיבלו אוכל</th><th class="num">מנוי</th>
-        <th class="num">שבוע נוסף</th><th class="num">נפלו</th><th class="num">פתוח</th><th class="num">המרה</th>
+        <th class="num">שבוע נוסף</th><th class="num">נפלו</th><th class="num">פתוח</th>
+        <th class="num">% מנוי</th><th class="num">% המשיכו</th>
       </tr></thead>
       <tbody>
         ${rows.map(r => `<tr class="${r.week === thisSunday ? 'is-now' : ''}">
@@ -136,10 +137,15 @@ function deliveryWeeksCard(leads) {
           <td class="num">${r.lost ? fmtNum(r.lost) : '–'}</td>
           <td class="num">${r.open ? `<b class="warn">${fmtNum(r.open)}</b>` : '–'}</td>
           <td class="num"><b class="${pct1(r.sub, r.got) >= 50 ? 'good' : ''}">${pct1(r.sub, r.got)}%</b></td>
+          <td class="num"><b class="${pct1(r.sub + r.repeat, r.got) >= 50 ? 'good' : ''}">${pct1(r.sub + r.repeat, r.got)}%</b></td>
         </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="panel__note">"פתוח" הם אנשים שקיבלו אוכל ועוד לא אמרו כן או לא – הם מחכים להחלטה שלך, לא שלהם.</p>
+    <p class="panel__note">
+      <b>% מנוי</b> הוא המטרה – הוראת קבע מתחדשת. <b>% המשיכו</b> מוסיף גם את מי שהזמין שבוע בודד נוסף:
+      הוא שילם ואהב, הוא פשוט עוד לא התחייב, ולספור אותו ככישלון זה לא מדויק.<br>
+      "פתוח" הם אנשים שקיבלו אוכל ועוד לא אמרו כן או לא – הם מחכים להחלטה שלך, לא שלהם.
+    </p>
   </section>`;
 }
 function dayCard(a, everyone) {
