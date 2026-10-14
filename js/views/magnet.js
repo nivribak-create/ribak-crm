@@ -247,13 +247,16 @@ function displayName(raw) {
 }
 
 function byInfluencer(mine) {
-  const names = [...new Set(mine.map(l => l.influencer).filter(Boolean))];
+  // Group by the name the board shows, not by the id on the lead: the same
+  // person's older leads carry "@shir" and the newer ones "@shirtaran", and
+  // grouping on those gave her two rows with the same name.
+  const names = [...new Set(mine.map(l => displayName(l.influencer)).filter(Boolean))];
   const rows = names.map(name => {
-    const ls = mine.filter(l => l.influencer === name);
+    const ls = mine.filter(l => displayName(l.influencer) === name);
     const dq = ls.filter(l => l.status === 'lost' && DISQUALIFYING.has(l.lostReason)).length;
     const real = ls.length - dq;
     return {
-      name: displayName(name),
+      name,
       total: ls.length,
       dq,
       real,
