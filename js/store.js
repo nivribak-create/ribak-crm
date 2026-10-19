@@ -377,6 +377,24 @@ export function clearAll() {
 // ---- influencer partnerships -------------------------------------------
 export const getInfluencers = () => (Array.isArray(state.settings.influencers) ? state.settings.influencers : []);
 
+// Meta hands a lead an ad id and nothing else, so the names behind those
+// ids live here: { "<adId>": { ad, adset, campaign } }.
+export const getAds = () => (state.settings.ads && typeof state.settings.ads === 'object' ? state.settings.ads : {});
+export function saveAds(map) {
+  const clean = {};
+  for (const [id, v] of Object.entries(map || {})) {
+    const key = String(id).replace(/[^0-9]/g, '').slice(0, 32);
+    if (!key || !v) continue;
+    clean[key] = {
+      ad: String(v.ad || '').trim().slice(0, 120),
+      adset: String(v.adset || '').trim().slice(0, 120),
+      campaign: String(v.campaign || '').trim().slice(0, 120),
+    };
+  }
+  commit(state.leads, { ...state.settings, ads: clean }, { settings: true });
+  return Object.keys(clean).length;
+}
+
 export function saveInfluencer(inf) {
   const list = getInfluencers();
   const t = nowIso();
@@ -455,6 +473,7 @@ function normalizeLead(raw) {
     influencer: String(raw.influencer || '').trim(),
     via: raw.via === 'magnet' ? 'magnet' : '',
     deliveryWeek: /^\d{4}-\d{2}-\d{2}$/.test(raw.deliveryWeek || '') ? raw.deliveryWeek : '',
+    adId: String(raw.adId || '').replace(/[^0-9]/g, '').slice(0, 32),
     owner: String(raw.owner || '').trim(),
     notes: String(raw.notes || ''),
     createdAt: t,

@@ -305,9 +305,13 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   const influencer = await canonicalInfluencer(
     String(b.influencer || b.ref || '').trim().replace(/\s+/g, ' ').slice(0, 60),
   );
+  // A click-to-DM ad hands the conversation the id of the ad it came from,
+  // which is the only way to tell which of eleven creatives earned a lead.
+  const adId = String(b.ad_id || b.adId || '').replace(/[^0-9]/g, '').slice(0, 32);
   const asked = String(b.source || '').trim();
   const source = influencer ? INFLUENCER_SOURCE
-    : INBOUND_SOURCES.includes(asked) ? asked : DEFAULT_SOURCE;
+    : INBOUND_SOURCES.includes(asked) ? asked
+      : adId ? 'אינסטגרם – ממומן' : DEFAULT_SOURCE;
   const now = new Date().toISOString();
   const noteText = [text ? `הודעה: "${text.slice(0, 300)}"` : '', username ? `אינסטגרם: @${username}` : ''].filter(Boolean).join(' · ');
   // Whether someone agreed to marketing messages is the kind of thing you
@@ -330,6 +334,7 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     const credited = String(existing.influencer || '').trim();
     const stolen = influencer && credited && credited !== influencer;
     if (influencer && !credited) { existing.influencer = influencer; existing.source = INFLUENCER_SOURCE; }
+    if (adId && !existing.adId) existing.adId = adId;
     existing.events = [
       ...(existing.events || []),
       { t: now, type: 'note', text: `פנייה חוזרת (${source})${influencer ? ' · ' + influencer : ''}${noteText ? ' · ' + noteText : ''}` },
@@ -342,7 +347,7 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     return res.json({ ok: true, created: false, id: existing.id });
   }
   const lead = {
-    id: newId(), name, phone, source, influencer,
+    id: newId(), name, phone, source, influencer, adId,
     // A form behind an influencer's link: a cold lead, counted apart from
     // the people who came asking about the food.
     via: influencer ? 'magnet' : '',

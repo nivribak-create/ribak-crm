@@ -3,7 +3,9 @@ import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, fmtDate, isParked, sundayOf } from '../util.js';
 import { handleAction, openDrawer } from '../lead.js';
+import { openModal, toast, field, formData } from '../ui.js';
 import { copyBtn } from '../ui.js';
+import * as store from '../store.js';
 
 const ui = {
   range: sessionStorage.getItem('ribak:range') || '90',
@@ -64,6 +66,8 @@ export function render(root, state) {
         </section>
       </div>
 
+      ${adsPanel(state.leads)}
+
       ${a.influencers.length ? `
       <section class="panel">
         <header class="panel__head"><div><h2>לפי משפיען</h2></div></header>
@@ -74,6 +78,7 @@ export function render(root, state) {
   root.querySelectorAll('[data-range]').forEach(b => b.addEventListener('click', () => {
     ui.range = b.dataset.range; sessionStorage.setItem('ribak:range', ui.range); render(root, state);
   }));
+  root.querySelector('[data-load-ads]')?.addEventListener('click', openAdsLoader);
   root.querySelector('[data-source]')?.addEventListener('change', e => {
     ui.source = e.target.value; sessionStorage.setItem('ribak:source', ui.source); render(root, state);
   });
@@ -97,6 +102,77 @@ const OUTCOME_CLASS = { open: 'active', subscriber: 'won', churned: 'churn', rep
 // The day, counted off the timeline: every dial, every conversation that
 // actually happened, and everything that closed.
 
+
+// ---- by ad --------------------------------------------------------------
+// A click-to-DM campaign runs a dozen creatives at once and Meta can only
+// say which one was clicked. Which one produced a customer is a question
+// only this side can answer, so the ad id rides along with the lead and
+// gets a name here.
+function adsPanel(leads) {
+  const withAd = leads.filter(l => l.adId);
+  if (!withAd.length) return '';
+  const names = store.getAds();
+  const by = new Map();
+  for (const l of withAd) {
+    const n = names[l.adId] || {};
+    const key = l.adId;
+    const row = by.get(key) || {
+      id: key,
+      ad: n.ad || `מודעה ${key.slice(-6)}`,
+      adset: n.adset || '',
+      campaign: n.campaign || '',
+      known: Boolean(n.ad),
+      total: 0, trial: 0, won: 0,
+    };
+    row.total++;
+    if (stageIndex(l.stage) >= stageIndex('trial')) row.trial++;
+    if (everSubscribed(l)) row.won++;
+    by.set(key, row);
+  }
+  const rows = [...by.values()].sort((a, b) => b.total - a.total);
+  const unknown = rows.filter(r => !r.known).length;
+  return `<section class="panel">
+    <header class="panel__head"><div><h2>לפי מודעה</h2>
+      <p class="muted">איזו מודעה הביאה ליד, ומה יצא ממנו</p></div>
+      <button class="btn btn--sm" data-load-ads>טעינת שמות מודעות</button>
+    </header>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>מודעה</th><th>סט</th><th class="num">לידים</th><th class="num">ניסיון</th><th class="num">מנוי</th></tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td>${esc(r.ad)}${r.campaign ? `<br><small class="muted">${esc(r.campaign)}</small>` : ''}</td>
+          <td><small class="muted">${esc(r.adset || '–')}</small></td>
+          <td class="num">${fmtNum(r.total)}</td>
+          <td class="num">${fmtNum(r.trial)}</td>
+          <td class="num"><b>${fmtNum(r.won)}</b></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+    ${unknown ? `<p class="panel__note">${fmtNum(unknown)} מודעות עדיין בלי שם – לחץ "טעינת שמות מודעות" והדבק את הרשימה.</p>` : ''}
+  </section>`;
+}
+
+function openAdsLoader() {
+  const current = JSON.stringify(store.getAds(), null, 1);
+  const m = openModal({
+    title: 'שמות המודעות',
+    wide: true,
+    body: `
+      <p class="modal__text">הדבק כאן את רשימת המודעות ממטא. המערכת שומרת רק את השמות,
+        כדי שהטבלה תציג "פרק 7 | מה אוכלים היום" במקום מספר.</p>
+      <textarea class="input" id="ads-json" rows="12" dir="ltr" spellcheck="false">${esc(current === '{}' ? '' : current)}</textarea>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" data-save-ads>שמירה</button>`,
+  });
+  m.el.querySelector('[data-save-ads]').addEventListener('click', () => {
+    const raw = m.el.querySelector('#ads-json').value.trim();
+    if (!raw) { store.saveAds({}); toast('הרשימה נוקתה'); m.close(); return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { toast('הטקסט אינו JSON תקין', 'warn'); return; }
+    const n = store.saveAds(parsed);
+    toast(`${n} מודעות נשמרו`, 'good');
+    m.close();
+  });
+}
 // ---- by delivery week ---------------------------------------------------
 // Food goes out on Sundays, so a customer belongs to the Sunday they were
 // fed on, and the subscription you are selling them is for the Sunday after
