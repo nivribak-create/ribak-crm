@@ -38,12 +38,16 @@ function boardHtml(state, today) {
   const onBoard = leads.filter(l => !dueLater(l));
   const cols = cohort.stages.map(s => ({
     stage: s,
-    leads: onBoard.filter(l => l.stage === s.id && l.status !== 'lost' && l.status !== 'churned')
+    leads: onBoard.filter(l => l.stage === s.id && !['lost', 'churned', 'occasional'].includes(l.status))
       .sort((a, b) => sortKey(a, today) - sortKey(b, today)),
   }));
   const lostLeads = onBoard.filter(l => l.status === 'lost' || l.status === 'churned').sort((a, b) => (a.lostAt < b.lostAt ? 1 : -1));
+  const occasional = leads.filter(l => l.status === 'occasional')
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   return {
-    html: cols.map(c => column(c, today)).join('') + futureColumn(parked) + (ui.showLost ? lostColumn(lostLeads) : ''),
+    html: cols.map(c => column(c, today)).join('') + futureColumn(parked)
+      + (occasional.length ? occasionalColumn(occasional) : '')
+      + (ui.showLost ? lostColumn(lostLeads) : ''),
     lostCount: lostLeads.length,
     activeCount: leads.filter(l => l.status === 'active').length,
   };
@@ -282,6 +286,42 @@ function futureCard(l) {
     <div class="card__row muted">יחזור ל${esc(STAGE_BY_ID[l.stage].label)}</div>
     ${l.notes ? `<p class="card__notes">${esc(l.notes)}</p>` : ''}
   </article>`;
+}
+
+
+// Customers who buy now and then. They are off the stage columns on
+// purpose — they are not work waiting to be done — but they are customers,
+// so they stay in sight at the end of the board rather than behind a
+// toggle with the losses.
+function occasionalColumn(leads) {
+  return `<section class="col col--occasional" data-stage="__occasional" aria-label="מזמינים מדי פעם">
+    <header class="col__head">
+      <span class="col__dot"></span>
+      <h2 class="col__title">מזמינים מדי פעם</h2>
+      <span class="col__count">${fmtNum(leads.length)}</span>
+      <span class="col__waiting">אהבו, לא רוצים כל שבוע</span>
+    </header>
+    <div class="col__body">
+      ${leads.map(l => `<article class="card card--occasional" data-id="${l.id}" tabindex="0">
+        <div class="card__top">
+          <b class="card__name">${esc(l.name)}</b>
+          <span class="card__source">${esc(sourceLabel(l))}</span>
+          <button class="card__move" data-move-menu="${l.id}" title="העברה לשלב אחר" aria-label="העברה לשלב אחר">⇄</button>
+        </div>
+        <div class="card__meta">
+          <span class="card__phone-wrap">
+            <a class="card__phone" href="${telLink(l.phone)}">${esc(fmtPhone(l.phone))}</a>
+            ${copyBtn(l.phone)}
+          </span>
+          <a class="card__wa" href="${waLink(l.phone)}" target="_blank" rel="noopener" title="פתח בוואטסאפ">וואטסאפ</a>
+        </div>
+        <div class="card__row">${weekTag(l)}<span class="muted">${esc(relDays(l.updatedAt))}</span></div>
+        <div class="card__actions">
+          <button class="btn btn--sm btn--primary" data-act="restore" data-id="${l.id}">↩ מזמין השבוע</button>
+        </div>
+      </article>`).join('')}
+    </div>
+  </section>`;
 }
 
 function lostColumn(leads) {

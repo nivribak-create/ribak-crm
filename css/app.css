@@ -1161,3 +1161,7 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .tag--week { background: var(--accent-soft); color: var(--accent-soft-ink); }
 .drawer__week { font-size: 13px; margin-top: 4px; }
 .linkish { background: none; border: 0; padding: 0 4px; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+
+/* Customers who buy now and then — parked, but not lost. */
+.col--occasional .col__dot { background: var(--warn); }
+.card--occasional { border-inline-start: 3px solid var(--warn); }

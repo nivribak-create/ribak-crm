@@ -159,6 +159,10 @@ export const STATUS = {
   won:     { id: 'won',     label: 'מנוי פעיל' },
   churned: { id: 'churned', label: 'היה מנוי והפסיק' },
   lost:    { id: 'lost',    label: 'אבד' },
+  // Liked the food, buys now and then, will not commit to a week every
+  // week. Not a subscriber and not a loss — counting them as either makes
+  // the numbers lie, and leaving them in the board makes it noisy.
+  occasional: { id: 'occasional', label: 'מזמין מדי פעם' },
 };
 export const STATUSES = Object.keys(STATUS);
 
@@ -171,8 +175,10 @@ export const everSubscribed = l => l.status === 'won' || l.status === 'churned';
 // stage and status to answer "what actually became of this customer".
 export const OUTCOMES = [
   { id: 'open',        label: 'עדיין בטיפול',              test: l => l.status === 'active' },
+
   { id: 'subscriber',  label: 'מנוי פעיל',                 test: l => l.status === 'won' },
   { id: 'churned',     label: 'היה מנוי והפסיק',           test: l => l.status === 'churned' },
+  { id: 'occasional',  label: 'מזמין מדי פעם',              test: l => l.status === 'occasional' },
   { id: 'repeat_only', label: 'הזמין שוב אבל בלי מנוי',    test: l => l.stage === 'repeat' && l.status === 'lost' },
   { id: 'trial_only',  label: 'ניסה שבוע ולא המשיך',       test: l => ['trial', 'delivered'].includes(l.stage) && l.status === 'lost' },
   { id: 'never_paid',  label: 'אבד לפני שבוע הניסיון',     test: l => ['new', 'followup', 'pitched'].includes(l.stage) && l.status === 'lost' },
@@ -219,4 +225,5 @@ export const EVENT_LABELS = {
   imported: 'יובא מרשימה',
   script:   'תסריט שיחה',
   talked:   'שיחה טלפונית',
+  occasional: 'עבר למזמינים מדי פעם',
 };

@@ -83,6 +83,30 @@ export function openLeadForm(lead = null) {
 // Which Sunday someone eats on moves around — a week postponed, a card
 // marked late — and it decides which week you are selling them, so it is
 // changed from the card itself rather than buried in the edit form.
+
+// "Liked it, not every week" is its own answer. It takes the customer off
+// the board without filing them as a loss, and keeps why in their own
+// words — those reasons are the product feedback worth collecting.
+export function openOccasionalDialog(lead) {
+  const m = openModal({
+    title: 'מזמין מדי פעם',
+    body: `
+      <p class="modal__text">${esc(lead.name)} ירד מהעמודות ויחכה בצד, בלי להיספר ככישלון מכירה.
+        כשהוא ירצה להזמין שוב – לחיצה אחת מחזירה אותו.</p>
+      <form class="form" id="occ-form">
+        ${field('למה לא כל שבוע? (לא חובה)', `<input class="input" name="note" placeholder="למשל: נשאר לה סטוק במקפיא · יקר כל שבוע · אוכלת בחוץ">`,
+    'זה מצטבר – אם אותה סיבה חוזרת, היא אומרת לך מה חסר במוצר')}
+      </form>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="occ-form">העברה</button>`,
+  });
+  m.el.querySelector('#occ-form').addEventListener('submit', e => {
+    e.preventDefault();
+    store.markOccasional(lead.id, formData(e.target).note);
+    toast(`${lead.name} → מזמינים מדי פעם`, 'good');
+    m.close();
+  });
+}
+
 export function openWeekDialog(lead) {
   const current = deliveryWeek(lead) || sundayOf(new Date());
   const sundays = [-1, 0, 1, 2].map(n => sundayOf(new Date(`${current}T12:00:00`).getTime() + n * 7 * 86400000));
@@ -269,6 +293,9 @@ export async function remove(lead) {
 
 // Buttons that appear on cards and in the drawer.
 export function actionButtons(lead, { compact = false } = {}) {
+  if (lead.status === 'occasional') {
+    return `<button class="btn btn--sm btn--primary" data-act="restore" data-id="${lead.id}">↩ מזמין השבוע</button>`;
+  }
   if (lead.status === 'lost' || lead.status === 'churned') {
     // A lead ruled out on the phone is often marked lost without anything
     // recording that the call happened, so it can still be said afterwards.
@@ -296,9 +323,13 @@ export function actionButtons(lead, { compact = false } = {}) {
   // From the delivery onwards there are two good outcomes — another single
   // week, or the subscription itself — so both are one click away.
   const skipToSub = ['delivered', 'repeat'].includes(lead.stage) && next.id !== FINAL_STAGE;
+  // Once someone has eaten, "not every week" is a real answer and not a
+  // failure, so it is one click away from here on.
+  const canPark = ['trial', 'delivered', 'repeat'].includes(lead.stage);
   return `
     <button class="btn btn--sm btn--primary" data-act="advance" data-id="${lead.id}" title="${esc(next.label)}">✓ ${esc(next.action)}</button>
     ${skipToSub ? `<button class="btn btn--sm" data-act="subscribe" data-id="${lead.id}" title="דילוג ישר למנוי">סגר מנוי</button>` : ''}
+    ${canPark ? `<button class="btn btn--sm" data-act="occasional" data-id="${lead.id}" title="אהב, אבל לא רוצה מנוי שבועי">🔁 מדי פעם</button>` : ''}
     ${canAttempt ? `<button class="btn btn--sm btn--ghost" data-act="attempt" data-id="${lead.id}" title="נרשם ניסיון, ננסה שוב מחר">לא ענה</button>` : ''}
     <button class="btn btn--sm btn--ghost btn--lost" data-act="lost" data-id="${lead.id}" title="סימון כאבוד">✕${compact ? '' : ' אבד'}</button>`;
 }
@@ -322,6 +353,7 @@ export function handleAction(e) {
     case 'restore': restore(lead); break;
     case 'talked': store.logTalk(lead.id); toast(`נרשמה שיחה עם ${lead.name}`, 'good'); break;
     case 'week': openWeekDialog(lead); break;
+    case 'occasional': openOccasionalDialog(lead); break;
     case 'edit': openLeadForm(lead); break;
     case 'delete': remove(lead); break;
     case 'open': openDrawer(lead.id); break;
@@ -426,6 +458,7 @@ function paintDrawer(panel) {
     if (ev.type === 'moved') text = `הועבר ל${STAGE_BY_ID[ev.stage]?.label || ''}`;
     if (ev.type === 'attempt') text = `ניסיון ${ev.channel === 'whatsapp' ? 'בוואטסאפ' : 'טלפוני'} ללא מענה`;
     if (ev.type === 'talked') text = 'שיחה טלפונית';
+    if (ev.type === 'occasional') text = 'עבר למזמינים מדי פעם';
     if (ev.type === 'note') text = ev.text;
     return `<li class="tl__item tl__item--${ev.type}">
       <span class="tl__dot"></span>

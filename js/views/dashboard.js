@@ -184,9 +184,10 @@ function deliveryWeeksCard(leads) {
     if (stageIndex(l.stage) < stageIndex('delivered')) continue;
     const w = deliveryWeek(l);
     if (!w) continue;
-    const row = by.get(w) || { week: w, got: 0, sub: 0, repeat: 0, lost: 0, open: 0 };
+    const row = by.get(w) || { week: w, got: 0, sub: 0, repeat: 0, occasional: 0, lost: 0, open: 0 };
     row.got++;
     if (everSubscribed(l)) row.sub++;
+    else if (l.status === 'occasional') row.occasional++;
     else if (l.status === 'lost' || l.status === 'churned') row.lost++;
     else if (l.stage === 'repeat') row.repeat++;
     else row.open++;
@@ -201,7 +202,7 @@ function deliveryWeeksCard(leads) {
     <div class="table-wrap"><table class="table">
       <thead><tr>
         <th>משלוח</th><th class="num">קיבלו אוכל</th><th class="num">מנוי</th>
-        <th class="num">שבוע נוסף</th><th class="num">נפלו</th><th class="num">פתוח</th>
+        <th class="num">שבוע נוסף</th><th class="num">מדי פעם</th><th class="num">נפלו</th><th class="num">פתוח</th>
         <th class="num">% מנוי</th><th class="num">% המשיכו</th>
       </tr></thead>
       <tbody>
@@ -210,6 +211,7 @@ function deliveryWeeksCard(leads) {
           <td class="num">${fmtNum(r.got)}</td>
           <td class="num"><b>${fmtNum(r.sub)}</b></td>
           <td class="num">${r.repeat ? fmtNum(r.repeat) : '–'}</td>
+          <td class="num">${r.occasional ? fmtNum(r.occasional) : '–'}</td>
           <td class="num">${r.lost ? fmtNum(r.lost) : '–'}</td>
           <td class="num">${r.open ? `<b class="warn">${fmtNum(r.open)}</b>` : '–'}</td>
           <td class="num"><b class="${pct1(r.sub, r.got) >= 50 ? 'good' : ''}">${pct1(r.sub, r.got)}%</b></td>
@@ -220,6 +222,7 @@ function deliveryWeeksCard(leads) {
     <p class="panel__note">
       <b>% מנוי</b> הוא המטרה – הוראת קבע מתחדשת. <b>% המשיכו</b> מוסיף גם את מי שהזמין שבוע בודד נוסף:
       הוא שילם ואהב, הוא פשוט עוד לא התחייב, ולספור אותו ככישלון זה לא מדויק.<br>
+      "מדי פעם" הם מי שאהב ולא רוצה מנוי שבועי – לא מנוי, אבל גם לא כישלון.<br>
       "פתוח" הם אנשים שקיבלו אוכל ועוד לא אמרו כן או לא – הם מחכים להחלטה שלך, לא שלהם.
     </p>
   </section>`;

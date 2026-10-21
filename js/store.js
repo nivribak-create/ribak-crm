@@ -294,6 +294,20 @@ export function markLost(id, reasonId, note = '') {
   });
 }
 
+// Someone who eats the food and orders now and then. They keep whatever
+// stage they reached, so the history stays readable, and they leave the
+// board until you bring them back for a specific week.
+export function markOccasional(id, note = '') {
+  patchLead(id, l => {
+    const t = nowIso();
+    l.status = 'occasional';
+    l.lostReason = null;
+    l.lostAt = null;
+    l.nextAt = null;
+    l.events.push({ t, type: 'occasional', stage: l.stage, text: note.trim() || undefined });
+  });
+}
+
 export function markChurned(id, reasonId, note = '') {
   patchLead(id, l => {
     const t = nowIso();
