@@ -1165,3 +1165,4 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 /* Customers who buy now and then — parked, but not lost. */
 .col--occasional .col__dot { background: var(--warn); }
 .card--occasional { border-inline-start: 3px solid var(--warn); }
+.tag--paid { background: var(--accent-soft); color: var(--accent-soft-ink); }

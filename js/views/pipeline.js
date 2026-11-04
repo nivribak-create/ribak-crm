@@ -1,4 +1,4 @@
-import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek } from '../model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adLabel } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays, sundayOf } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
 import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
@@ -206,6 +206,16 @@ const sourceLabel = l => l.influencer || l.source;
 
 // Which Sunday's delivery this card belongs to — the thing that decides
 // which week you are selling them a subscription for.
+// A lead that came from an ad says so, and says which one — the creative
+// is the part worth knowing, not that it was paid.
+function adTag(l) {
+  if (!l.adId) return '';
+  const ad = store.getAds()[l.adId];
+  const label = adLabel(ad);
+  return `<span class="tag tag--paid" title="${ad && ad.campaign ? esc(ad.campaign) : 'ליד ממומן'}">
+    💰 ${label ? esc(label) : 'ממומן'}</span>`;
+}
+
 function weekTag(l) {
   const w = deliveryWeek(l);
   if (!w) return '';
@@ -236,6 +246,7 @@ function card(l, today, isFinal) {
     <div class="card__row">
       <span class="muted">${inStage === 0 ? 'היום' : `${inStage} ${inStage === 1 ? 'יום' : 'ימים'} בשלב`}</span>
       ${weekTag(l)}
+      ${adTag(l)}
       ${l.attempts ? `<span class="tag tag--warn" title="ניסיונות ללא מענה">${l.attempts} ללא מענה</span>` : ''}
       ${l.nextAt ? `<span class="tag ${due < 0 ? 'tag--lost' : due === 0 ? 'tag--warn' : ''}">${esc(dueLabel(l.nextAt))}</span>` : ''}
       ${done ? '<span class="tag tag--done">✓ טופל היום</span>' : ''}

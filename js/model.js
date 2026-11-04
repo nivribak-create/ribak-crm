@@ -115,6 +115,15 @@ export const subscriptionWeek = l => {
 // the main board rather than splitting that routine across two screens.
 export const onColdBoard = l => viaMagnet(l) && stageIndex(l.stage) < stageIndex('trial');
 
+// Ad names carry their whole filing system — "07 | W7 | פרק 5 | לא עשיר
+// בחלבון" — and only the two ends of that are worth reading on a card.
+export function adLabel(ad) {
+  if (!ad || !ad.ad) return '';
+  const parts = String(ad.ad).split('|').map(x => x.trim()).filter(Boolean);
+  if (parts.length < 2) return parts[0] || '';
+  return `${parts[0]} · ${parts[parts.length - 1]}`;
+}
+
 // Every time the phone was picked up for this lead — answered or not.
 const CALL_EVENTS = new Set(['attempt', 'talked', 'script']);
 export const calledAt = l => (l.events || [])

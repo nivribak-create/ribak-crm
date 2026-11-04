@@ -1,11 +1,21 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo, onColdBoard, deliveryWeek, subscriptionWeek } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo, onColdBoard, deliveryWeek, subscriptionWeek, adLabel } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
 import { SALES_SCRIPT, visibleFields } from './scripts.js';
 import { preserve } from './render.js';
 import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso, phoneProblem, sundayOf } from './util.js';
+
+// Where a paid lead actually came from: campaign, audience, creative.
+function adLine(lead) {
+  if (!lead.adId) return '';
+  const ad = store.getAds()[lead.adId] || {};
+  const bits = [ad.campaign, ad.adset, adLabel(ad)].filter(Boolean);
+  return `<div class="drawer__week muted">💰 ליד ממומן${bits.length
+    ? ` · ${bits.map(esc).join(' · ')}`
+    : ` · מודעה ${esc(lead.adId.slice(-6))} (השמות עוד לא נטענו)`}</div>`;
+}
 
 const everSubscribedSafe = l => l.status === 'won' || l.status === 'churned';
 
@@ -477,6 +487,7 @@ function paintDrawer(panel) {
       <div>
         <h2 class="drawer__name">${esc(lead.name)}</h2>
         <div class="drawer__sub">${statusTag}<span class="muted">נכנס ${fmtDateLong(lead.createdAt)} · ${esc(lead.source)}${lead.influencer ? ' · ' + esc(lead.influencer) : ''}</span></div>
+        ${adLine(lead)}
         ${deliveryWeek(lead) ? `<div class="drawer__week muted">🍲 ${stageIndex(lead.stage) === stageIndex('trial') ? 'מקבל את האוכל' : 'קיבל את האוכל'} ביום ראשון ${esc(fmtDate(deliveryWeek(lead)))}${subscriptionWeek(lead) && !everSubscribedSafe(lead) ? ` · מועמד למנוי של ${esc(fmtDate(subscriptionWeek(lead)))}` : ''}
           <button class="linkish" data-act="week" data-id="${lead.id}">שנה שבוע</button></div>` : ''}
       </div>
