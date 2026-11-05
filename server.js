@@ -439,15 +439,28 @@ app.get('/api/meta/webhook', (req, res) => {
 
 app.post('/api/meta/webhook', wrap(async (req, res) => {
   if (!META_APP_SECRET || !META_PAGE_TOKEN) return res.status(503).json({ error: 'meta_not_configured' });
-  if (!signedByMeta(req)) return res.status(401).json({ error: 'bad_signature' });
+  if (!signedByMeta(req)) {
+    // Silent rejection is the worst failure here: Meta looks like it is not
+    // sending, when in fact its signature does not match the app secret.
+    console.warn('meta webhook rejected: signature does not match META_APP_SECRET');
+    return res.status(401).json({ error: 'bad_signature' });
+  }
   // Answer first: Meta retries anything that is slow, and a retry is a duplicate.
   res.status(200).json({ ok: true });
   await ensureSchema();
   for (const entry of (req.body && req.body.entry) || []) {
+    console.log(`meta webhook: ${(entry.changes || []).length} change(s) for page ${entry.id}`);
     for (const ch of entry.changes || []) {
       if (ch.field !== 'leadgen' || !ch.value || !ch.value.leadgen_id) continue;
       try {
         const lead = await pullMetaLead(ch.value.leadgen_id);
+        // Meta's "create test lead" fills every field with a placeholder. It
+        // proves the pipe works, and storing it would only put a fake person
+        // with no phone number in the list.
+        if (JSON.stringify(lead.field_data || []).includes('dummy data')) {
+          console.log(`meta test lead ${ch.value.leadgen_id}: received and read OK (placeholder data, not stored)`);
+          continue;
+        }
         const f = fromFormFields(lead.field_data || []);
         const out = await ingestLead({
           name: f.name, phone: f.phone, notes: f.notes,
