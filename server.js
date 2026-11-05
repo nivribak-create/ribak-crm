@@ -394,7 +394,13 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
 //                       endpoint this is
 //   META_APP_SECRET   – the app's secret; every delivery is signed with it
 //   META_PAGE_TOKEN   – a page access token with leads_retrieval
-const { META_VERIFY_TOKEN, META_APP_SECRET, META_PAGE_TOKEN } = process.env;
+// A secret pasted into a hosting panel picks up a trailing space or a pair of
+// quotes more often than anything else, and then every signature "mismatches"
+// while looking exactly right to the eye.
+const cleanEnv = v => String(v || '').trim().replace(/^["']+|["']+$/g, '').trim();
+const META_VERIFY_TOKEN = cleanEnv(process.env.META_VERIFY_TOKEN);
+const META_APP_SECRET = cleanEnv(process.env.META_APP_SECRET);
+const META_PAGE_TOKEN = cleanEnv(process.env.META_PAGE_TOKEN);
 const GRAPH = 'https://graph.facebook.com/v21.0';
 
 const signedByMeta = req => {
@@ -442,7 +448,12 @@ app.post('/api/meta/webhook', wrap(async (req, res) => {
   if (!signedByMeta(req)) {
     // Silent rejection is the worst failure here: Meta looks like it is not
     // sending, when in fact its signature does not match the app secret.
-    console.warn('meta webhook rejected: signature does not match META_APP_SECRET');
+    // Enough to tell a wrong value from a right one without printing either:
+    // an app secret is 32 characters, an app id is 15 digits.
+    const given = String(req.get('x-hub-signature-256') || '');
+    console.warn(`meta webhook rejected: signature does not match META_APP_SECRET `
+      + `(secret is ${META_APP_SECRET.length} characters, a real one is 32; `
+      + `signature header ${given ? 'present' : 'missing'}; body ${req.rawBody ? req.rawBody.length : 0} bytes)`);
     return res.status(401).json({ error: 'bad_signature' });
   }
   // Answer first: Meta retries anything that is slow, and a retry is a duplicate.
