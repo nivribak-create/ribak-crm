@@ -127,7 +127,12 @@ function recordFailure(ip) {
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(express.json({ limit: '8mb' }));
+app.use(express.json({
+  limit: '8mb',
+  // Meta signs the exact bytes it sent, so the signature can only be checked
+  // against the raw body, not against the parsed JSON.
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
 const requireAuth = (req, res, next) => (isAuthed(req) ? next() : res.status(401).json({ error: 'unauthorized', code: 'unauthorized' }));
@@ -287,17 +292,15 @@ async function canonicalInfluencer(raw) {
   return /^[A-Za-z0-9._-]+$/.test(given) ? `@${given}` : raw;
 }
 
-app.post('/api/inbound/lead', wrap(async (req, res) => {
-  if (!WEBHOOK_KEYS.length) return res.status(503).json({ error: 'webhook_not_configured', code: 'webhook_not_configured' });
-  if (!webhookAuthed(req)) return res.status(401).json({ error: 'unauthorized', code: 'unauthorized' });
-  await ensureSchema();
-  const b = req.body && typeof req.body === 'object' ? req.body : {};
+// One place that turns "someone left their details" into a lead, so every
+// sender — a bot, a website form, a Meta lead form — behaves the same.
+async function ingestLead(b) {
   const text = String(b.text || b.message || '').trim().slice(0, 1000);
   const phone = extractPhone(b.phone, text);
   // Most DMs are just conversation, so an automation can forward all of them
   // and let this decide. Nothing to do is a success, not an error — otherwise
   // the automation's log fills with failures and hides the real ones.
-  if (!phone) return res.json({ ok: true, created: false, reason: 'no_phone' });
+  if (!phone) return { status: 200, body: { ok: true, created: false, reason: 'no_phone' } };
   const username = String(b.username || b.ig_username || '').trim().replace(/^@/, '');
   const name = String(b.name || b.full_name || '').trim() || (username ? `@${username}` : 'ליד מאינסטגרם');
   // Which influencer sent them is the whole point of a gateway link, so it
@@ -308,6 +311,9 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   // A click-to-DM ad hands the conversation the id of the ad it came from,
   // which is the only way to tell which of eleven creatives earned a lead.
   const adId = String(b.ad_id || b.adId || '').replace(/[^0-9]/g, '').slice(0, 32);
+  // Meta delivers a webhook at least once, so the same form submission can
+  // arrive twice; its own id is what tells the two apart from a real repeat.
+  const leadgenId = String(b.leadgen_id || '').replace(/[^0-9]/g, '').slice(0, 32);
   const asked = String(b.source || '').trim();
   const source = influencer ? INFLUENCER_SOURCE
     : INBOUND_SOURCES.includes(asked) ? asked
@@ -326,9 +332,16 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   const [rows] = await pool.query('SELECT id, data FROM leads');
   let existing = null;
   for (const r of rows) {
-    try { const l = JSON.parse(r.data); if (String(l.phone || '').replace(/\D/g, '') === phone) { existing = l; break; } } catch { /* skip */ }
+    try {
+      const l = JSON.parse(r.data);
+      if (leadgenId && Array.isArray(l.leadgenIds) && l.leadgenIds.includes(leadgenId)) {
+        return { status: 200, body: { ok: true, created: false, duplicate: true, id: l.id } };
+      }
+      if (!existing && String(l.phone || '').replace(/\D/g, '') === phone) existing = l;
+    } catch { /* skip */ }
   }
   if (existing) {
+    if (leadgenId) existing.leadgenIds = [...(existing.leadgenIds || []), leadgenId].slice(-20);
     // Whoever brought them in first keeps the credit; a second influencer's
     // link only earns a line on the timeline.
     const credited = String(existing.influencer || '').trim();
@@ -344,10 +357,11 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     existing.updatedAt = now;
     if (existing.status === 'active' && !existing.nextAt) existing.nextAt = now.slice(0, 10);
     await pool.query('UPDATE leads SET data = ?, updated_at = ? WHERE id = ?', [JSON.stringify(existing), toSqlDate(now), existing.id]);
-    return res.json({ ok: true, created: false, id: existing.id });
+    return { status: 200, body: { ok: true, created: false, id: existing.id } };
   }
   const lead = {
     id: newId(), name, phone, source, influencer, adId,
+    leadgenIds: leadgenId ? [leadgenId] : [],
     // A form behind an influencer's link: a cold lead, counted apart from
     // the people who came asking about the food.
     via: influencer ? 'magnet' : '',
@@ -362,8 +376,94 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
     ],
   };
   await pool.query('INSERT INTO leads (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)', [lead.id, JSON.stringify(lead), toSqlDate(now), toSqlDate(now)]);
-  res.status(201).json({ ok: true, created: true, id: lead.id });
+  return { status: 201, body: { ok: true, created: true, id: lead.id } };
+}
+
+app.post('/api/inbound/lead', wrap(async (req, res) => {
+  if (!WEBHOOK_KEYS.length) return res.status(503).json({ error: 'webhook_not_configured', code: 'webhook_not_configured' });
+  if (!webhookAuthed(req)) return res.status(401).json({ error: 'unauthorized', code: 'unauthorized' });
+  await ensureSchema();
+  const out = await ingestLead(req.body && typeof req.body === 'object' ? req.body : {});
+  res.status(out.status).json(out.body);
 }));
+// ---- Meta lead forms ------------------------------------------------------
+// A lead form lives inside Meta, so nothing here can read it directly:
+// Meta tells us a form was filled (an id and nothing else), and the details
+// are fetched with a page token. Three secrets, all environment variables:
+//   META_VERIFY_TOKEN – any string; Meta sends it back once to prove whose
+//                       endpoint this is
+//   META_APP_SECRET   – the app's secret; every delivery is signed with it
+//   META_PAGE_TOKEN   – a page access token with leads_retrieval
+const { META_VERIFY_TOKEN, META_APP_SECRET, META_PAGE_TOKEN } = process.env;
+const GRAPH = 'https://graph.facebook.com/v21.0';
+
+const signedByMeta = req => {
+  if (!META_APP_SECRET || !req.rawBody) return false;
+  const given = String(req.get('x-hub-signature-256') || '');
+  const want = 'sha256=' + crypto.createHmac('sha256', META_APP_SECRET).update(req.rawBody).digest('hex');
+  return given.length === want.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
+};
+
+// A form's questions are the advertiser's own, so they arrive under whatever
+// they were called — "full_name", "שם_מלא", a custom question. The phone and
+// the name are picked out by what the field looks like; everything else is
+// kept as a note, because "how many meals a week" is worth reading.
+function fromFormFields(fields) {
+  const get = re => fields.find(f => re.test(f.name) && (f.values || []).length);
+  const val = f => String((f && f.values && f.values[0]) || '').trim();
+  const phone = val(get(/phone|טלפון|נייד|mobile|cell/i));
+  const first = val(get(/^first_?name|שם_?פרטי/i));
+  const last = val(get(/^last_?name|שם_?משפחה/i));
+  const full = val(get(/full_?name|שם_?מלא|^name$|^שם$/i));
+  const used = new Set([get(/phone|טלפון|נייד|mobile|cell/i), get(/^first_?name|שם_?פרטי/i), get(/^last_?name|שם_?משפחה/i), get(/full_?name|שם_?מלא|^name$|^שם$/i), get(/email|מייל|דוא/i)]);
+  const rest = fields
+    .filter(f => !used.has(f) && (f.values || []).length)
+    .map(f => `${String(f.name).replace(/_/g, ' ')}: ${(f.values || []).join(', ')}`)
+    .join(' · ');
+  return { phone, name: full || [first, last].filter(Boolean).join(' '), notes: rest.slice(0, 480) };
+}
+
+async function pullMetaLead(leadgenId) {
+  const r = await fetch(`${GRAPH}/${encodeURIComponent(leadgenId)}?access_token=${encodeURIComponent(META_PAGE_TOKEN)}`);
+  if (!r.ok) throw new Error(`graph ${r.status}`);
+  return r.json();
+}
+
+app.get('/api/meta/webhook', (req, res) => {
+  if (!META_VERIFY_TOKEN) return res.status(503).end();
+  if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === META_VERIFY_TOKEN) {
+    return res.status(200).type('text/plain').send(String(req.query['hub.challenge'] || ''));
+  }
+  res.status(403).end();
+});
+
+app.post('/api/meta/webhook', wrap(async (req, res) => {
+  if (!META_APP_SECRET || !META_PAGE_TOKEN) return res.status(503).json({ error: 'meta_not_configured' });
+  if (!signedByMeta(req)) return res.status(401).json({ error: 'bad_signature' });
+  // Answer first: Meta retries anything that is slow, and a retry is a duplicate.
+  res.status(200).json({ ok: true });
+  await ensureSchema();
+  for (const entry of (req.body && req.body.entry) || []) {
+    for (const ch of entry.changes || []) {
+      if (ch.field !== 'leadgen' || !ch.value || !ch.value.leadgen_id) continue;
+      try {
+        const lead = await pullMetaLead(ch.value.leadgen_id);
+        const f = fromFormFields(lead.field_data || []);
+        const out = await ingestLead({
+          name: f.name, phone: f.phone, notes: f.notes,
+          ad_id: ch.value.ad_id || lead.ad_id, leadgen_id: ch.value.leadgen_id,
+          text: f.phone ? '' : JSON.stringify(lead.field_data || []).slice(0, 400),
+        });
+        console.log(`meta lead ${ch.value.leadgen_id}: ${out.status} ${JSON.stringify(out.body)}`);
+      } catch (e) {
+        // Not rethrown: the answer has gone out, and one bad lead must not
+        // stop the others in the same delivery.
+        console.error(`meta lead ${ch.value.leadgen_id} failed:`, e.message);
+      }
+    }
+  }
+}));
+
 app.get('/api/inbound/lead', (req, res) => res.status(405).json({ error: 'use_post', code: 'use_post', message: 'POST JSON {name, phone|text, username} with header X-Webhook-Key' }));
 
 app.use('/api', leadsRouter);
