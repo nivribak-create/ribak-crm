@@ -4,6 +4,7 @@ import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead
 import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
 import { installDrag } from '../dnd.js';
 import * as store from '../store.js';
+import { readFile } from '../import.js';
 
 // Two boards off one piece of code: the main one, and the cold leads an
 // influencer's link brought in, which are a different job — a queue to work
@@ -67,9 +68,19 @@ function board(root, state, cohort) {
       <input class="input input--sm input--search" type="search" placeholder="חיפוש לפי שם או טלפון" value="${esc(ui.q)}" data-q aria-label="חיפוש">
       <label class="switch"><input type="checkbox" data-showlost ${ui.showLost ? 'checked' : ''}><span>הצג אבודים והפסיקו (<span data-lost-count>${fmtNum(b.lostCount)}</span>)</span></label>
       <span class="toolbar__note muted"><span data-active-count>${fmtNum(b.activeCount)}</span> בטיפול · ${esc(COHORTS[cohort].note(b.activeCount))}</span>
+      ${cohort === 'warm' ? `<label class="btn btn--sm toolbar__import" title="הוספת רשימת אנשי קשר למזמינים מדי פעם">
+        ⤒ ייבוא למזמינים מדי פעם<input type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt" hidden data-import-occ>
+      </label>` : ''}
     </div>
     <div class="board ${ui.showLost ? 'board--with-lost' : ''}">${b.html}</div>`;
 
+  root.querySelector('[data-import-occ]')?.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try { openOccasionalImport(await readFile(file)); }
+    catch (err) { toast(err.message === 'old_xls' ? 'הקובץ בפורמט ישן (.xls). שמור כ-.xlsx ונסה שוב' : `לא הצלחתי לקרוא את הקובץ: ${err.message}`, 'warn'); }
+  });
   root.querySelector('[data-q]').addEventListener('input', e => {
     ui.q = e.target.value;
     const boardEl = root.querySelector('.board');
@@ -333,6 +344,69 @@ function occasionalColumn(leads) {
       </article>`).join('')}
     </div>
   </section>`;
+}
+
+// ---- bringing a contact list in as occasional customers -----------------
+// A list of numbers says nothing about who is already a customer here, and
+// marking a subscriber "occasional" would quietly break their record. So the
+// list is checked against the system first and shown, and only what is new
+// is added — nobody who is already here is touched.
+const LOOKS_LIKE_CUSTOMER = /לקוח|שבוע ניסיון|מנוי|ניסיון/;
+
+function openOccasionalImport({ leads, skipped }) {
+  const fresh = [], known = [];
+  for (const r of leads) {
+    const have = store.findByPhone(r.phone);
+    if (have) known.push({ r, have }); else fresh.push(r);
+  }
+  if (!fresh.length) {
+    toast(known.length ? `כל ${fmtNum(known.length)} האנשים כבר במערכת` : 'לא מצאתי מספרי טלפון בקובץ', 'warn');
+    return;
+  }
+  // The contact's own label — "...לקוח", "...שבוע ניסיון" — often says they
+  // are already buying, which a name in a phone book does not make official.
+  const flagged = fresh.filter(r => LOOKS_LIKE_CUSTOMER.test(r.name));
+  const plain = fresh.filter(r => !LOOKS_LIKE_CUSTOMER.test(r.name));
+  const stateOf = l => l.status === 'won' ? 'מנוי פעיל'
+    : l.status === 'occasional' ? 'כבר מזמין מדי פעם'
+      : l.status === 'lost' || l.status === 'churned' ? 'אבוד' : (STAGE_BY_ID[l.stage]?.short || '');
+
+  const m = openModal({
+    title: 'ייבוא למזמינים מדי פעם',
+    wide: true,
+    body: `
+      <p class="modal__text"><b>${fmtNum(plain.length)}</b> אנשים חדשים יתווספו ל"מזמינים מדי פעם".
+        ${known.length ? `<br><b>${fmtNum(known.length)}</b> כבר במערכת ולא ייגעו.` : ''}
+        ${skipped ? `<br>${fmtNum(skipped)} שורות בלי מספר ישראלי תקין דולגו.` : ''}</p>
+      <p class="muted" style="margin-top:0">הם נשמרים כאנשי קשר: לא נספרים כלידים שנכנסו ולא משנים שום אחוז המרה.</p>
+
+      ${flagged.length ? `<details open class="more"><summary>נראים כמו לקוחות קיימים – לא יתווספו אלא אם תסמן (${fmtNum(flagged.length)})</summary>
+        <div class="pull-list">${flagged.map((r, i) => `<label class="pull">
+          <input type="checkbox" data-flag="${i}"><span class="pull__body"><b>${esc(r.name)}</b>
+          <small class="muted">${esc(fmtPhone(r.phone))}</small></span></label>`).join('')}</div></details>` : ''}
+
+      ${known.length ? `<details class="more"><summary>כבר במערכת (${fmtNum(known.length)})</summary>
+        <div class="pull-list">${known.map(({ r, have }) => `<div class="pull"><span class="pull__body">
+          <b>${esc(have.name)}</b> <small class="muted">${esc(stateOf(have))}${r.name && r.name !== have.name ? ` · ברשימה: ${esc(r.name)}` : ''}</small></span></div>`).join('')}</div></details>` : ''}
+
+      <details class="more"><summary>מי יתווסף (${fmtNum(plain.length)})</summary>
+        <div class="pull-list">${plain.map(r => `<div class="pull"><span class="pull__body">
+          <b>${esc(r.name || '—')}</b> <small class="muted">${esc(fmtPhone(r.phone))}</small></span></div>`).join('')}</div></details>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" data-go>הוספה (${fmtNum(plain.length)})</button>`,
+  });
+
+  const go = m.el.querySelector('[data-go]');
+  const recount = () => {
+    const extra = m.el.querySelectorAll('[data-flag]:checked').length;
+    go.textContent = `הוספה (${fmtNum(plain.length + extra)})`;
+  };
+  m.el.addEventListener('change', e => { if (e.target.matches('[data-flag]')) recount(); });
+  go.addEventListener('click', () => {
+    const extra = [...m.el.querySelectorAll('[data-flag]:checked')].map(c => flagged[Number(c.dataset.flag)]);
+    const n = store.importOccasionalMany([...plain, ...extra]);
+    m.close();
+    toast(n ? `${fmtNum(n)} נוספו למזמינים מדי פעם` : 'לא נוסף אף אחד', n ? 'good' : 'warn');
+  });
 }
 
 function lostColumn(leads) {

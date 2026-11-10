@@ -375,6 +375,27 @@ export function logTalkMany(ids) {
   return changed.length;
 }
 
+// A contact list, added as customers who order now and then. One write for
+// the whole list, and nothing in the list can overwrite someone already here.
+export function importOccasionalMany(rows) {
+  const t = nowIso();
+  const made = [];
+  for (const r of rows) {
+    if (!r.phone || findByPhone(r.phone)) continue;
+    made.push(normalizeLead({
+      id: uid(), name: r.name || r.phone, phone: r.phone, source: 'וואטסאפ',
+      createdAt: t, updatedAt: t, stage: 'new', status: 'occasional',
+      contactOnly: true, nextAt: null, attempts: 0,
+      events: [
+        { t, type: 'imported', stage: 'new', imported: true },
+        { t, type: 'occasional', stage: 'new', text: 'יובא מרשימת אנשי קשר', imported: true },
+      ],
+    }));
+  }
+  if (made.length) commit([...made, ...state.leads], state.settings, { upsert: made });
+  return made.length;
+}
+
 export function deleteLead(id) {
   commit(state.leads.filter(l => l.id !== id), state.settings, { remove: [id] });
 }
@@ -486,6 +507,9 @@ function normalizeLead(raw) {
     source,
     influencer: String(raw.influencer || '').trim(),
     via: raw.via === 'magnet' ? 'magnet' : '',
+    // Someone brought in from a contact list rather than from a sale: kept so
+    // they can be found and called, but never counted as a lead that arrived.
+    contactOnly: Boolean(raw.contactOnly),
     deliveryWeek: /^\d{4}-\d{2}-\d{2}$/.test(raw.deliveryWeek || '') ? raw.deliveryWeek : '',
     adId: String(raw.adId || '').replace(/[^0-9]/g, '').slice(0, 32),
     // Meta's own ids for the form submissions behind this lead, kept so a

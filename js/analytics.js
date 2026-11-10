@@ -26,7 +26,8 @@ export function filterLeads(leads, { range = 'all', source = '' } = {}) {
 // What a day of selling looked like, counted off the timeline rather than
 // off the leads' current state — a lead that was called today and closed
 // tomorrow belongs to both days.
-export function dayReport(leads, date = new Date()) {
+export function dayReport(everyLead, date = new Date()) {
+  const leads = everyLead.filter(l => !l.contactOnly);
   const day = isoDay(date);
   let dials = 0, fullCalls = 0, trialCloses = 0, subCloses = 0;
   // leads that arrived on this day, however they got in
@@ -61,7 +62,9 @@ const cohortOf = (leads, cohort) => (
       : leads);
 
 export function computeAnalytics(everyLead, filters = {}) {
-  const allLeads = cohortOf(everyLead, filters.cohort);
+  // A contact list is not a week of leads: counting it would put hundreds of
+  // people into "arrived" and bury every conversion rate under them.
+  const allLeads = cohortOf(everyLead.filter(l => !l.contactOnly), filters.cohort);
   const leads = filterLeads(allLeads, filters);
   const n = leads.length;
   const sold = leads.filter(everSubscribed).length;      // ever became a subscriber
