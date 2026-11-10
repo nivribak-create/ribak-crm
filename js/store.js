@@ -6,7 +6,7 @@
 // consistent in both modes.
 
 import { STAGES, stageIndex, nextStage, FINAL_STAGE, LEGACY_STAGES, LEGACY_REASONS, LEGACY_SOURCES, SOURCES, UNKNOWN_SOURCE, STATUSES } from './model.js';
-import { uid, nowIso, isoDay, addDays, normPhone, cleanPhone } from './util.js';
+import { uid, nowIso, isoDay, addDays, normPhone, cleanPhone, deliverySundayFor } from './util.js';
 import * as api from './api.js';
 
 const KEY = 'ribak-crm:v1';
@@ -396,6 +396,34 @@ export function importOccasionalMany(rows) {
   return made.length;
 }
 
+// ---- message rounds -----------------------------------------------------
+export function nudgeMany(ids) {
+  const want = new Set(ids);
+  const t = nowIso();
+  const changed = [];
+  const leads = state.leads.map(l => {
+    if (!want.has(l.id)) return l;
+    const copy = { ...l, updatedAt: t, events: [...l.events, { t, type: 'nudged' }] };
+    changed.push(copy);
+    return copy;
+  });
+  if (changed.length) commit(leads, state.settings, { upsert: changed });
+  return changed.length;
+}
+// An order from someone who buys now and then: it names the Sunday it is
+// for, and they stay where they are instead of re-entering the pipeline.
+export function recordOrder(id) {
+  const week = deliverySundayFor(new Date());
+  patchLead(id, l => { l.events.push({ t: nowIso(), type: 'ordered', week }); });
+  return week;
+}
+export function setNoMarketing(id, off) {
+  patchLead(id, l => {
+    l.noMarketing = Boolean(off);
+    l.events.push({ t: nowIso(), type: 'note', text: off ? 'ביקש/ה הסרה מהודעות' : 'חזר/ה לקבל הודעות' });
+  });
+}
+
 export function deleteLead(id) {
   commit(state.leads.filter(l => l.id !== id), state.settings, { remove: [id] });
 }
@@ -510,6 +538,8 @@ function normalizeLead(raw) {
     // Someone brought in from a contact list rather than from a sale: kept so
     // they can be found and called, but never counted as a lead that arrived.
     contactOnly: Boolean(raw.contactOnly),
+    // Asked not to be messaged. Checked before every round, for good.
+    noMarketing: Boolean(raw.noMarketing),
     deliveryWeek: /^\d{4}-\d{2}-\d{2}$/.test(raw.deliveryWeek || '') ? raw.deliveryWeek : '',
     adId: String(raw.adId || '').replace(/[^0-9]/g, '').slice(0, 32),
     // Meta's own ids for the form submissions behind this lead, kept so a

@@ -364,6 +364,9 @@ export function handleAction(e) {
     case 'talked': store.logTalk(lead.id); toast(`נרשמה שיחה עם ${lead.name}`, 'good'); break;
     case 'week': openWeekDialog(lead); break;
     case 'occasional': openOccasionalDialog(lead); break;
+    case 'ordered': { const w = store.recordOrder(lead.id); toast(`${lead.name} הזמין למשלוח של ${fmtDate(w)} 🎉`, 'good'); break; }
+    case 'optout': store.setNoMarketing(lead.id, true); toast(`${lead.name} לא יקבל יותר הודעות`); break;
+    case 'optin': store.setNoMarketing(lead.id, false); toast(`${lead.name} חזר לרשימת ההודעות`); break;
     case 'edit': openLeadForm(lead); break;
     case 'delete': remove(lead); break;
     case 'open': openDrawer(lead.id); break;
@@ -469,6 +472,7 @@ function paintDrawer(panel) {
     if (ev.type === 'attempt') text = `ניסיון ${ev.channel === 'whatsapp' ? 'בוואטסאפ' : 'טלפוני'} ללא מענה`;
     if (ev.type === 'talked') text = 'שיחה טלפונית';
     if (ev.type === 'occasional') text = 'עבר למזמינים מדי פעם';
+    if (ev.type === 'ordered') text = `הזמין משלוח${ev.week ? ` ליום ראשון ${fmtDate(ev.week)}` : ''}`;
     if (ev.type === 'note') text = ev.text;
     return `<li class="tl__item tl__item--${ev.type}">
       <span class="tl__dot"></span>

@@ -124,6 +124,27 @@ export function adLabel(ad) {
   return `${parts[0]} · ${parts[parts.length - 1]}`;
 }
 
+// ---- message rounds to the people who order now and then ---------------
+// One rule carries the whole rhythm: nobody hears from you twice inside two
+// weeks. A round simply takes the people who have waited longest, so sending
+// fifty at a time spreads the list out by itself.
+export const ROUND_GAP_DAYS = 14;
+const lastOf = (l, type) => (l.events || []).filter(e => e.type === type).pop() || null;
+export const lastNudge = l => lastOf(l, 'nudged');
+export const lastOrder = l => lastOf(l, 'ordered');
+export const inRounds = l => l.status === 'occasional' && !l.noMarketing;
+export function dueForRound(l, now = Date.now()) {
+  if (!inRounds(l)) return false;
+  const n = lastNudge(l);
+  if (n && now - new Date(n.t).getTime() < ROUND_GAP_DAYS * 86400000) return false;
+  const o = lastOrder(l);
+  return !(o && o.week && o.week >= sundayOf(new Date(now)));
+}
+// A phone book's "אור לקוח" or "רוני שבוע ניסיון" must not become "היי אור
+// לקוח": the first word is the name, the rest was a note to self.
+export const firstName = name => String(name || '')
+  .replace(/לקוחה?|שבוע ניסיון|ניסיון|מנוי/g, ' ').trim().split(/\s+/)[0] || '';
+
 // Every time the phone was picked up for this lead — answered or not.
 const CALL_EVENTS = new Set(['attempt', 'talked', 'script']);
 export const calledAt = l => (l.events || [])
@@ -235,4 +256,6 @@ export const EVENT_LABELS = {
   script:   'תסריט שיחה',
   talked:   'שיחה טלפונית',
   occasional: 'עבר למזמינים מדי פעם',
+  nudged:   'נשלחה הודעת סבב',
+  ordered:  'הזמין משלוח',
 };

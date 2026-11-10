@@ -1,10 +1,11 @@
-import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adLabel } from '../model.js';
-import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays, sundayOf } from '../util.js';
+import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adLabel, lastNudge, lastOrder, inRounds, dueForRound, firstName, ROUND_GAP_DAYS } from '../model.js';
+import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays, sundayOf, normPhone } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
-import { copyBtn, toast, openModal, field, formData, openMenu } from '../ui.js';
+import { copyBtn, toast, openModal, field, formData, openMenu, copyToClipboard } from '../ui.js';
 import { installDrag } from '../dnd.js';
 import * as store from '../store.js';
 import { readFile } from '../import.js';
+import { downloadXlsx } from '../xlsx-write.js';
 
 // Two boards off one piece of code: the main one, and the cold leads an
 // influencer's link brought in, which are a different job — a queue to work
@@ -44,7 +45,7 @@ function boardHtml(state, today) {
   }));
   const lostLeads = onBoard.filter(l => l.status === 'lost' || l.status === 'churned').sort((a, b) => (a.lostAt < b.lostAt ? 1 : -1));
   const occasional = leads.filter(l => l.status === 'occasional')
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    .sort((a, b) => occRank(a) - occRank(b) || (a.updatedAt < b.updatedAt ? 1 : -1));
   return {
     html: cols.map(c => column(c, today)).join('') + futureColumn(parked)
       + (occasional.length ? occasionalColumn(occasional) : '')
@@ -98,6 +99,7 @@ function board(root, state, cohort) {
     if (e.target.closest('a')) { e.stopPropagation(); return; }
     const mv = e.target.closest('[data-move-menu]');
     if (mv) { e.stopPropagation(); openStageMenu(mv.dataset.moveMenu, mv); return; }
+    if (e.target.closest('[data-round]')) { e.stopPropagation(); openRound(store.getState().leads); return; }
     if (handleAction(e)) return;
     const card = e.target.closest('.card');
     if (card) openDrawer(card.dataset.id);
@@ -315,16 +317,27 @@ function futureCard(l) {
 // purpose — they are not work waiting to be done — but they are customers,
 // so they stay in sight at the end of the board rather than behind a
 // toggle with the losses.
+const upcomingOrder = l => { const o = lastOrder(l); return o && o.week && o.week >= sundayOf(new Date()) ? o : null; };
+const awaitingReply = l => {
+  const n = lastNudge(l);
+  if (!n || Date.now() - new Date(n.t).getTime() > ROUND_GAP_DAYS * 86400000) return null;
+  const o = lastOrder(l);
+  return o && o.t > n.t ? null : n;
+};
+const occRank = l => (l.noMarketing ? 3 : upcomingOrder(l) ? 0 : awaitingReply(l) ? 1 : 2);
+
 function occasionalColumn(leads) {
   return `<section class="col col--occasional" data-stage="__occasional" aria-label="מזמינים מדי פעם">
     <header class="col__head">
       <span class="col__dot"></span>
       <h2 class="col__title">מזמינים מדי פעם</h2>
       <span class="col__count">${fmtNum(leads.length)}</span>
-      <span class="col__waiting">אהבו, לא רוצים כל שבוע</span>
+      <button class="btn btn--sm btn--primary col__round" data-round>📣 סבב הודעות</button>
     </header>
     <div class="col__body">
-      ${leads.map(l => `<article class="card card--occasional" data-id="${l.id}" tabindex="0">
+      ${leads.map(l => {
+    const order = upcomingOrder(l), waiting = awaitingReply(l);
+    return `<article class="card card--occasional ${l.noMarketing ? 'is-off' : ''}" data-id="${l.id}" tabindex="0">
         <div class="card__top">
           <b class="card__name">${esc(l.name)}</b>
           <span class="card__source">${esc(sourceLabel(l))}</span>
@@ -337,13 +350,92 @@ function occasionalColumn(leads) {
           </span>
           <a class="card__wa" href="${waLink(l.phone)}" target="_blank" rel="noopener" title="פתח בוואטסאפ">וואטסאפ</a>
         </div>
-        <div class="card__row">${weekTag(l)}<span class="muted">${esc(relDays(l.updatedAt))}</span></div>
-        <div class="card__actions">
-          <button class="btn btn--sm btn--primary" data-act="restore" data-id="${l.id}">↩ מזמין השבוע</button>
+        <div class="card__row">
+          ${order ? `<span class="tag tag--done">✓ הזמין ל-${esc(fmtDate(order.week))}</span>` : ''}
+          ${!order && waiting ? `<span class="tag tag--warn">נשלח ${esc(fmtDate(waiting.t))} · מחכה לתשובה</span>` : ''}
+          ${l.noMarketing ? '<span class="tag">הוסר מהודעות</span>' : ''}
         </div>
-      </article>`).join('')}
+        <div class="card__actions">
+          ${l.noMarketing
+      ? `<button class="btn btn--sm btn--ghost" data-act="optin" data-id="${l.id}">החזר להודעות</button>`
+      : `${order ? '' : `<button class="btn btn--sm btn--primary" data-act="ordered" data-id="${l.id}">✓ הזמין</button>`}
+             <button class="btn btn--sm btn--ghost btn--lost" data-act="optout" data-id="${l.id}" title="לא לשלוח לו יותר הודעות">הסר</button>`}
+        </div>
+      </article>`;
+  }).join('')}
     </div>
   </section>`;
+}
+
+// ---- a round of messages ------------------------------------------------
+// The whole mechanism is this one dialog: it picks the people who have
+// waited longest, hands their numbers to the sender as a file, and marks
+// them as written to. Nobody is picked twice inside two weeks, so pressing
+// it weekly with fifty at a time walks the list by itself. Replies are
+// marked on the card; whoever is not marked simply did not answer.
+const ROUND_MSG_KEY = 'ribak:roundMsg';
+const DEFAULT_ROUND_MSG = `היי {שם}, ניב מריבק 👋
+השבוע בתפריט: [2–3 מנות].
+רוצה שאשריין לך משלוח ליום ראשון?
+(להסרה השיבו "הסר")`;
+
+function lastRoundLine(leads) {
+  const days = leads.map(l => lastNudge(l)).filter(Boolean).map(n => isoDay(n.t)).sort();
+  const day = days[days.length - 1];
+  if (!day) return '';
+  const sent = leads.filter(l => (l.events || []).some(e => e.type === 'nudged' && isoDay(e.t) === day));
+  const after = l => (l.events || []).find(e => e.type === 'nudged' && isoDay(e.t) === day).t;
+  const ordered = sent.filter(l => (l.events || []).some(e => e.type === 'ordered' && e.t > after(l))).length;
+  const off = sent.filter(l => l.noMarketing).length;
+  return `הסבב האחרון (${fmtDate(day)}): נשלחו ${fmtNum(sent.length)} · הזמינו ${fmtNum(ordered)}${off ? ` · הסירו ${fmtNum(off)}` : ''}`;
+}
+
+function openRound(leads) {
+  const pool = leads.filter(inRounds);
+  // People who have actually eaten here first, then whoever has waited longest.
+  const due = pool.filter(l => dueForRound(l)).sort((a, b) =>
+    (a.contactOnly ? 1 : 0) - (b.contactOnly ? 1 : 0)
+    || (lastNudge(a)?.t || '') .localeCompare(lastNudge(b)?.t || ''));
+  const recent = pool.length - due.length;
+  let msg = DEFAULT_ROUND_MSG;
+  try { msg = localStorage.getItem(ROUND_MSG_KEY) || msg; } catch { /* private window */ }
+  const stat = lastRoundLine(leads);
+
+  const m = openModal({
+    title: 'סבב הודעות',
+    body: `
+      ${stat ? `<p class="modal__text"><b>${esc(stat)}</b></p>` : ''}
+      <p class="modal__text"><b>${fmtNum(due.length)}</b> מחכים להודעה.
+        ${recent ? `<span class="muted">${fmtNum(recent)} קיבלו בשבועיים האחרונים או כבר הזמינו, ולא ייכללו.</span>` : ''}</p>
+      <form class="form" id="round-form">
+        ${field('לכמה לשלוח עכשיו', `<input class="input" type="number" name="n" min="1" max="${due.length}" value="${Math.min(50, due.length)}">`,
+    'עד 50 בפעם אחת שומר על המספר שלך בוואטסאפ ועל כמות התשובות שתצטרך לטפל בהן')}
+        ${field('ההודעה (להעתקה ל-JONI)', `<textarea class="input" name="msg" rows="5">${esc(msg)}</textarea>`,
+    'השם נמצא בקובץ בעמודה "שם" – שים במקומו את שדה השם של JONI')}
+      </form>`,
+    footer: `<button class="btn" data-close>ביטול</button>
+      <button class="btn" data-copy-msg>העתקת ההודעה</button>
+      <button class="btn btn--primary" type="submit" form="round-form" ${due.length ? '' : 'disabled'}>הורדת הקובץ וסימון כנשלח</button>`,
+  });
+  const form = m.el.querySelector('#round-form');
+  const remember = () => { try { localStorage.setItem(ROUND_MSG_KEY, form.msg.value); } catch { /* ignore */ } };
+  m.el.querySelector('[data-copy-msg]').addEventListener('click', () => {
+    remember();
+    toast(copyToClipboard(form.msg.value) ? 'ההודעה הועתקה' : 'ההעתקה נכשלה – סמן והעתק ידנית', 'good');
+  });
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    remember();
+    const n = Math.max(1, Math.min(due.length, Number(form.n.value) || 0));
+    const batch = due.slice(0, n);
+    downloadXlsx(`ribak-round-${isoDay(new Date())}.xlsx`, [
+      ['מספר נייד', 'שם', 'שם מלא'],
+      ...batch.map(l => [`972${normPhone(l.phone).slice(1)}`, firstName(l.name), l.name]),
+    ], 'JONI');
+    store.nudgeMany(batch.map(l => l.id));
+    m.close();
+    toast(`${fmtNum(batch.length)} בקובץ וסומנו כנשלח. מי שעונה – סמן על הכרטיס שלו`, 'good');
+  });
 }
 
 // ---- bringing a contact list in as occasional customers -----------------

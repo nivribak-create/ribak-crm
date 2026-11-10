@@ -1166,3 +1166,7 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .col--occasional .col__dot { background: var(--warn); }
 .card--occasional { border-inline-start: 3px solid var(--warn); }
 .tag--paid { background: var(--accent-soft); color: var(--accent-soft-ink); }
+
+/* Message rounds to the people who order now and then. */
+.col__round { margin-inline-start: auto; }
+.card--occasional.is-off { opacity: .55; }
