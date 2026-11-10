@@ -576,11 +576,11 @@ h1{font-weight:900;font-size:clamp(40px,12.5vw,58px);line-height:1.02;letter-spa
 const roundShell = body => `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><meta name="theme-color" content="#fafaf8">
 <title>RIBAK</title>
-<meta property="og:title" content="RIBAK | המשלוח של השבוע"><meta property="og:description" content="שף פרטי. במקרר שלך."><meta property="og:image" content="/icons/ribak-og.jpg">
+<meta property="og:title" content="RIBAK | המשלוח של השבוע"><meta property="og:description" content="שף פרטי. במקרר שלך."><meta property="og:image" content="/r/_og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;800;900&display=swap" rel="stylesheet">
 <style>${ROUND_CSS}</style></head><body><main id="page">
-<img class="logo" src="/icons/ribak-logo.png" alt="RIBAK" width="112" height="56">
+<img class="logo" src="/r/_logo.png" alt="RIBAK" width="112" height="56">
 ${body}
 </main></body></html>`;
 
@@ -630,6 +630,11 @@ const roundPage = ({ first, week, demo }) => roundShell(`
   });
 })();
 </script>`);
+
+// The page's own images sit under /r/ too, so that the whole thing can be
+// served from another domain with a single forwarding rule.
+app.get('/r/_logo.png', (req, res) => res.sendFile(path.join(__dirname, 'icons', 'ribak-logo.png'), { maxAge: '7d' }));
+app.get('/r/_og.jpg', (req, res) => res.sendFile(path.join(__dirname, 'icons', 'ribak-og.jpg'), { maxAge: '7d' }));
 
 app.get('/r/:token', wrap(async (req, res) => {
   if (!pool) return res.status(503).end();
