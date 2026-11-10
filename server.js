@@ -556,10 +556,11 @@ h1{font-weight:900;font-size:clamp(40px,12.5vw,58px);line-height:1.02;letter-spa
 .tag__day{font-weight:700;font-size:19px;margin:0}
 .tag__date{font-weight:900;font-size:clamp(76px,25vw,112px);line-height:.9;letter-spacing:-.03em;margin:4px 0 12px;direction:ltr;text-align:right}
 .tag__note{margin:0;font-size:14.5px;border-top:1.5px dashed rgba(17,17,17,.45);padding-top:10px}
-.stamp{position:absolute;inset-inline-end:16px;top:14px;border:3px solid var(--ink);border-radius:50%;width:92px;height:92px;display:grid;place-items:center;
-  font-weight:900;font-size:19px;transform:rotate(-13deg) scale(0);opacity:0}
+.stamp{position:absolute;left:18px;bottom:11px;border:3px solid var(--ink);border-radius:5px;padding:1px 13px 2px;
+  font-weight:900;font-size:21px;line-height:1.3;transform:rotate(-7deg) scale(0);opacity:0}
+[data-state=order] .tag__note{color:transparent}
 [data-state=order] .stamp{animation:stamp .28s cubic-bezier(.2,1.4,.4,1) forwards}
-@keyframes stamp{from{transform:rotate(-13deg) scale(1.7);opacity:0}to{transform:rotate(-13deg) scale(1);opacity:1}}
+@keyframes stamp{from{transform:rotate(-7deg) scale(1.8);opacity:0}to{transform:rotate(-7deg) scale(1);opacity:1}}
 [data-state=decline] .tag,[data-state=stop] .tag{background:var(--line)}
 .btn{display:block;width:100%;min-height:58px;border-radius:14px;font:inherit;font-weight:800;font-size:18px;cursor:pointer;margin:0 0 12px;padding:14px 16px}
 .btn--yes{background:var(--ink);color:var(--paper);border:2px solid var(--ink)}
@@ -570,8 +571,7 @@ h1{font-weight:900;font-size:clamp(40px,12.5vw,58px);line-height:1.02;letter-spa
 .answer{font-size:19px;font-weight:700;margin:0 0 8px}
 .answer+p{margin:0;color:var(--muted)}
 .err{color:#b42318;font-weight:700;margin:0 0 14px}
-footer{margin-top:auto;padding-top:34px;color:var(--muted);font-size:14px}
-@media (prefers-reduced-motion:reduce){[data-state=order] .stamp{animation:none;transform:rotate(-13deg);opacity:1}}
+@media (prefers-reduced-motion:reduce){[data-state=order] .stamp{animation:none;transform:rotate(-7deg);opacity:1}}
 `;
 const roundShell = body => `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><meta name="theme-color" content="#fafaf8">
@@ -582,7 +582,7 @@ const roundShell = body => `<!doctype html><html lang="he" dir="rtl"><head><meta
 <style>${ROUND_CSS}</style></head><body><main id="page">
 <img class="logo" src="/icons/ribak-logo.png" alt="RIBAK" width="112" height="56">
 ${body}
-<footer>טעים, יעיל, בריא</footer></main></body></html>`;
+</main></body></html>`;
 
 const roundNotFound = () => roundShell(`<h1>הקישור הזה כבר לא פעיל.</h1>
 <p class="answer">אפשר פשוט לענות לניב בוואטסאפ.</p>`);
@@ -593,7 +593,7 @@ const roundPage = ({ first, week, demo }) => roundShell(`
   <p class="tag__day">המשלוח הבא, יום ראשון</p>
   <p class="tag__date">${dayMonth(week)}</p>
   <p class="tag__note">ההזמנות נסגרות ביום רביעי ב-23:00</p>
-  <div class="stamp" aria-hidden="true">שוריין</div>
+  <div class="stamp" aria-hidden="true">שוריין ✓</div>
 </div>
 <div id="ask" aria-live="polite">
   <button class="btn btn--yes" data-a="order">כן, תשריינו לי משלוח</button>
