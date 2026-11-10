@@ -394,6 +394,12 @@ function lastRoundLine(leads) {
   return `הסבב האחרון (${fmtDate(day)}): נשלחו ${fmtNum(sent.length)} · הזמינו ${fmtNum(ordered)} · לא הפעם ${fmtNum(declined)} · הסירו ${fmtNum(off)} · לא ענו ${fmtNum(silent)}`;
 }
 
+// What a customer sees in WhatsApp. The website forwards everything under
+// /r/ to this server (Vercel → CDN → Routing Rules), so the link carries the
+// brand's own address instead of the hosting one. If that rule is ever
+// removed, set this back to location.origin.
+const ROUND_LINK_BASE = 'https://www.ribakfood.co.il';
+
 function openRound(leads) {
   const pool = leads.filter(inRounds);
   // People who have actually eaten here first, then whoever has waited longest.
@@ -436,7 +442,7 @@ function openRound(leads) {
     const batch = store.nudgeMany(due.slice(0, n).map(l => l.id));
     downloadXlsx(`ribak-round-${isoDay(new Date())}.xlsx`, [
       ['מספר נייד', 'שם', 'שם מלא', 'קישור'],
-      ...batch.map(l => [`972${normPhone(l.phone).slice(1)}`, firstName(l.name), l.name, `${location.origin}/r/${l.roundToken}`]),
+      ...batch.map(l => [`972${normPhone(l.phone).slice(1)}`, firstName(l.name), l.name, `${ROUND_LINK_BASE}/r/${l.roundToken}`]),
     ], 'JONI');
     m.close();
     toast(`${fmtNum(batch.length)} בקובץ וסומנו כנשלח. התשובות יירשמו כאן לבד`, 'good');
