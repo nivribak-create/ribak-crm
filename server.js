@@ -554,7 +554,10 @@ small{color:#8aa0a1}
 app.get('/r/:token', wrap(async (req, res) => {
   if (!pool) return res.status(503).end();
   await ensureSchema();
-  const lead = await leadByRoundToken(String(req.params.token || ''));
+  // /r/demo shows the page exactly as a customer sees it, with buttons that
+  // answer but record nothing — for looking at it without touching anyone.
+  const demo = req.params.token === 'demo';
+  const lead = demo ? { name: 'ניב' } : await leadByRoundToken(String(req.params.token || ''));
   res.set('Cache-Control', 'no-store');
   if (!lead) return res.status(404).send(roundPage('הקישור לא נמצא', '<p>אפשר פשוט לענות לניב בוואטסאפ 🙏</p>'));
   const first = String(lead.name || '').replace(/לקוחה?|שבוע ניסיון|ניסיון|מנוי/g, ' ').trim().split(/\s+/)[0] || '';
@@ -573,8 +576,10 @@ app.get('/r/:token', wrap(async (req, res) => {
       document.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', async () => {
         document.querySelectorAll('[data-a]').forEach(x => { x.disabled = true; });
         try {
-          const r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: b.dataset.a }) });
-          if (!r.ok) throw new Error();
+          if (!${demo}) {
+            const r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: b.dataset.a }) });
+            if (!r.ok) throw new Error();
+          }
           document.getElementById('ask').innerHTML = '<p>' + done[b.dataset.a] + '</p>';
         } catch { document.getElementById('ask').innerHTML = '<p>משהו השתבש. אפשר פשוט לענות לניב בוואטסאפ 🙏</p>'; }
       }));
