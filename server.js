@@ -539,17 +539,97 @@ async function leadByRoundToken(token) {
   return null;
 }
 
-const roundPage = (title, body) => `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>RIBAK</title><meta property="og:title" content="RIBAK – המשלוח של השבוע"><meta property="og:description" content="אוכל מבושל טרי עד הבית">
-<style>
-body{margin:0;font-family:-apple-system,"Segoe UI",Arial,sans-serif;background:#0f1a1b;color:#eef4f4;display:grid;place-items:center;min-height:100vh}
-main{width:min(92vw,420px);padding:28px 22px;background:#162526;border-radius:18px;text-align:center;box-sizing:border-box}
-h1{font-size:22px;margin:0 0 6px}p{color:#b7c9ca;line-height:1.6;margin:0 0 20px;font-size:16px}
-button{display:block;width:100%;padding:15px;border-radius:12px;border:0;font:inherit;font-size:17px;font-weight:600;cursor:pointer;margin-bottom:10px}
-.yes{background:#39b5c0;color:#06272a}.no{background:#22393b;color:#eef4f4}.stop{background:none;color:#8aa0a1;font-size:14px;font-weight:400;text-decoration:underline}
-small{color:#8aa0a1}
-</style></head><body><main><h1>${title}</h1>${body}</main></body></html>`;
+// The page a customer lands on from their message. It is the brand's own
+// paper, ink and green, and it is built around one thing: the label on the
+// box that will arrive — which Sunday — because that is the whole question.
+const ROUND_CSS = `
+:root{--paper:#fafaf8;--ink:#111;--green:#5DA551;--green-deep:#478a3c;--muted:#6b7280;--line:#e5e7eb}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Heebo','Arial Hebrew',Arial,sans-serif;font-size:17px;line-height:1.55}
+main{width:min(100%,460px);margin:0 auto;padding:22px 22px 36px;min-height:100vh;display:flex;flex-direction:column}
+.logo{width:112px;height:auto;display:block}
+h1{font-weight:900;font-size:clamp(40px,12.5vw,58px);line-height:1.02;letter-spacing:-.02em;margin:34px 0 26px}
+.tag{position:relative;background:var(--green);border-radius:6px;padding:20px 22px 18px;transform:rotate(-1.4deg);margin:0 2px 30px;
+  -webkit-mask:radial-gradient(circle 9px at 0 50%,transparent 98%,#000) left/51% 100% no-repeat,radial-gradient(circle 9px at 100% 50%,transparent 98%,#000) right/51% 100% no-repeat;
+  mask:radial-gradient(circle 9px at 0 50%,transparent 98%,#000) left/51% 100% no-repeat,radial-gradient(circle 9px at 100% 50%,transparent 98%,#000) right/51% 100% no-repeat}
+.tag__day{font-weight:700;font-size:19px;margin:0}
+.tag__date{font-weight:900;font-size:clamp(76px,25vw,112px);line-height:.9;letter-spacing:-.03em;margin:4px 0 12px;direction:ltr;text-align:right}
+.tag__note{margin:0;font-size:14.5px;border-top:1.5px dashed rgba(17,17,17,.45);padding-top:10px}
+.stamp{position:absolute;inset-inline-end:16px;top:14px;border:3px solid var(--ink);border-radius:50%;width:92px;height:92px;display:grid;place-items:center;
+  font-weight:900;font-size:19px;transform:rotate(-13deg) scale(0);opacity:0}
+[data-state=order] .stamp{animation:stamp .28s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes stamp{from{transform:rotate(-13deg) scale(1.7);opacity:0}to{transform:rotate(-13deg) scale(1);opacity:1}}
+[data-state=decline] .tag,[data-state=stop] .tag{background:var(--line)}
+.btn{display:block;width:100%;min-height:58px;border-radius:14px;font:inherit;font-weight:800;font-size:18px;cursor:pointer;margin:0 0 12px;padding:14px 16px}
+.btn--yes{background:var(--ink);color:var(--paper);border:2px solid var(--ink)}
+.btn--no{background:transparent;color:var(--ink);border:2px solid var(--ink)}
+.btn--stop{min-height:44px;border:0;background:none;color:var(--muted);font-weight:400;font-size:15px;text-decoration:underline;text-underline-offset:3px;margin-top:4px}
+.btn:focus-visible{outline:3px solid var(--green-deep);outline-offset:3px}
+.btn:disabled{opacity:.5;cursor:default}
+.answer{font-size:19px;font-weight:700;margin:0 0 8px}
+.answer+p{margin:0;color:var(--muted)}
+.err{color:#b42318;font-weight:700;margin:0 0 14px}
+footer{margin-top:auto;padding-top:34px;color:var(--muted);font-size:14px}
+@media (prefers-reduced-motion:reduce){[data-state=order] .stamp{animation:none;transform:rotate(-13deg);opacity:1}}
+`;
+const roundShell = body => `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><meta name="theme-color" content="#fafaf8">
+<title>RIBAK</title>
+<meta property="og:title" content="RIBAK | המשלוח של השבוע"><meta property="og:description" content="שף פרטי. במקרר שלך."><meta property="og:image" content="/icons/ribak-og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;800;900&display=swap" rel="stylesheet">
+<style>${ROUND_CSS}</style></head><body><main id="page">
+<img class="logo" src="/icons/ribak-logo.png" alt="RIBAK" width="112" height="56">
+${body}
+<footer>טעים, יעיל, בריא</footer></main></body></html>`;
+
+const roundNotFound = () => roundShell(`<h1>הקישור הזה כבר לא פעיל.</h1>
+<p class="answer">אפשר פשוט לענות לניב בוואטסאפ.</p>`);
+
+const roundPage = ({ first, week, demo }) => roundShell(`
+<h1>${first ? `היי ${htmlEsc(first)}.<br>` : ''}אוכל מוכן לשבוע הבא?</h1>
+<div class="tag">
+  <p class="tag__day">המשלוח הבא, יום ראשון</p>
+  <p class="tag__date">${dayMonth(week)}</p>
+  <p class="tag__note">ההזמנות נסגרות ביום רביעי ב-23:00</p>
+  <div class="stamp" aria-hidden="true">שוריין</div>
+</div>
+<div id="ask" aria-live="polite">
+  <button class="btn btn--yes" data-a="order">כן, תשריינו לי משלוח</button>
+  <button class="btn btn--no" data-a="decline">לא הפעם</button>
+  <button class="btn btn--stop" data-a="stop">אל תשלחו לי יותר הודעות</button>
+</div>
+<script>
+(function () {
+  var done = {
+    order: ['שוריין לך משלוח ליום ראשון ${dayMonth(week)}.', 'ניב יחזור אליך בוואטסאפ לסגור את הפרטים.'],
+    decline: ['אין בעיה.', 'נדבר לקראת המשלוח הבא.'],
+    stop: ['הוסרת מהרשימה.', 'לא יישלחו אליך עוד הודעות.']
+  };
+  var ask = document.getElementById('ask'), page = document.getElementById('page'), buttons = ask.querySelectorAll('[data-a]');
+  var set = function (off) { for (var i = 0; i < buttons.length; i++) buttons[i].disabled = off; };
+  var send = function (a) {
+    if (${demo ? 'true' : 'false'}) return Promise.resolve();
+    return fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: a }) })
+      .then(function (r) { if (!r.ok) throw new Error('refused'); });
+  };
+  ask.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-a]');
+    if (!b || b.disabled) return;
+    var a = b.getAttribute('data-a');
+    set(true);
+    send(a).then(function () {
+      page.setAttribute('data-state', a);
+      ask.innerHTML = '<p class="answer">' + done[a][0] + '</p><p>' + done[a][1] + '</p>';
+    }).catch(function () {
+      set(false);
+      var old = ask.querySelector('.err'); if (old) old.remove();
+      ask.insertAdjacentHTML('afterbegin', '<p class="err">הלחיצה לא נרשמה. אפשר לנסות שוב, או לענות לניב בוואטסאפ.</p>');
+    });
+  });
+})();
+</script>`);
 
 app.get('/r/:token', wrap(async (req, res) => {
   if (!pool) return res.status(503).end();
@@ -559,31 +639,11 @@ app.get('/r/:token', wrap(async (req, res) => {
   const demo = req.params.token === 'demo';
   const lead = demo ? { name: 'ניב' } : await leadByRoundToken(String(req.params.token || ''));
   res.set('Cache-Control', 'no-store');
-  if (!lead) return res.status(404).send(roundPage('הקישור לא נמצא', '<p>אפשר פשוט לענות לניב בוואטסאפ 🙏</p>'));
+  if (!lead) return res.status(404).send(roundNotFound());
   const first = String(lead.name || '').replace(/לקוחה?|שבוע ניסיון|ניסיון|מנוי/g, ' ').trim().split(/\s+/)[0] || '';
-  const week = deliverySundayIL();
   // Opening the page records nothing: WhatsApp fetches every link once to
   // draw its preview, and that must not count as anyone's answer.
-  res.send(roundPage(`היי ${htmlEsc(first)} 👋`, `
-    <div id="ask">
-      <p>רוצה משלוח של ריבק ליום ראשון ${dayMonth(week)}?</p>
-      <button class="yes" data-a="order">כן, תשריינו לי משלוח</button>
-      <button class="no" data-a="decline">לא הפעם</button>
-      <button class="stop" data-a="stop">אל תשלחו לי יותר הודעות</button>
-    </div>
-    <script>
-      const done = { order: 'מעולה! רשמנו אותך למשלוח של יום ראשון ${dayMonth(week)}. ניב יחזור אליך בוואטסאפ לסגור פרטים 🙏', decline: 'אין בעיה, נדבר בפעם הבאה 🙏', stop: 'הוסרת מהרשימה. לא נשלח יותר הודעות.' };
-      document.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', async () => {
-        document.querySelectorAll('[data-a]').forEach(x => { x.disabled = true; });
-        try {
-          if (!${demo}) {
-            const r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: b.dataset.a }) });
-            if (!r.ok) throw new Error();
-          }
-          document.getElementById('ask').innerHTML = '<p>' + done[b.dataset.a] + '</p>';
-        } catch { document.getElementById('ask').innerHTML = '<p>משהו השתבש. אפשר פשוט לענות לניב בוואטסאפ 🙏</p>'; }
-      }));
-    </script>`));
+  res.send(roundPage({ first, week: deliverySundayIL(), demo }));
 }));
 
 app.post('/r/:token', wrap(async (req, res) => {
