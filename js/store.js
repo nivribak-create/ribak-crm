@@ -397,18 +397,21 @@ export function importOccasionalMany(rows) {
 }
 
 // ---- message rounds -----------------------------------------------------
+const newToken = () => [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
+// Marks a batch as written to and returns it, each with the token its
+// answer link is built from — the file for the sender is made from these.
 export function nudgeMany(ids) {
   const want = new Set(ids);
   const t = nowIso();
   const changed = [];
   const leads = state.leads.map(l => {
     if (!want.has(l.id)) return l;
-    const copy = { ...l, updatedAt: t, events: [...l.events, { t, type: 'nudged' }] };
+    const copy = { ...l, updatedAt: t, roundToken: l.roundToken || newToken(), events: [...l.events, { t, type: 'nudged' }] };
     changed.push(copy);
     return copy;
   });
   if (changed.length) commit(leads, state.settings, { upsert: changed });
-  return changed.length;
+  return changed;
 }
 // An order from someone who buys now and then: it names the Sunday it is
 // for, and they stay where they are instead of re-entering the pipeline.
@@ -540,6 +543,8 @@ function normalizeLead(raw) {
     contactOnly: Boolean(raw.contactOnly),
     // Asked not to be messaged. Checked before every round, for good.
     noMarketing: Boolean(raw.noMarketing),
+    // The key to this person's own answer link in a round message.
+    roundToken: /^[a-f0-9]{16,64}$/.test(raw.roundToken || '') ? raw.roundToken : '',
     deliveryWeek: /^\d{4}-\d{2}-\d{2}$/.test(raw.deliveryWeek || '') ? raw.deliveryWeek : '',
     adId: String(raw.adId || '').replace(/[^0-9]/g, '').slice(0, 32),
     // Meta's own ids for the form submissions behind this lead, kept so a

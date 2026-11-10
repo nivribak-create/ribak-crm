@@ -186,6 +186,23 @@ const validLead = l => l && typeof l === 'object' && typeof l.id === 'string' &&
 leadsRouter.put('/leads/:id', wrap(async (req, res) => {
   const lead = req.body;
   if (!validLead(lead) || lead.id !== req.params.id) return res.status(400).json({ error: 'bad_lead', code: 'bad_lead' });
+  // The app saves a lead whole, from the copy it loaded. If the customer
+  // pressed a button on their link in the meantime, that answer exists only
+  // here — so it is carried over rather than overwritten. Losing an order is
+  // bad; losing a "stop messaging me" is worse.
+  const [prev] = await pool.query('SELECT data FROM leads WHERE id = ?', [lead.id]);
+  if (prev.length) {
+    try {
+      const stored = JSON.parse(prev[0].data);
+      const key = e => `${e.t}|${e.type}`;
+      const have = new Set((lead.events || []).map(key));
+      const missed = (stored.events || []).filter(e => e.via === 'link' && !have.has(key(e)));
+      if (missed.length) {
+        lead.events = [...(lead.events || []), ...missed].sort((a, b) => (a.t < b.t ? -1 : 1));
+        if (missed.some(e => e.type === 'optout')) lead.noMarketing = true;
+      }
+    } catch { /* an unreadable old row has nothing to carry over */ }
+  }
   const data = JSON.stringify(lead);
   await pool.query(
     'INSERT INTO leads (id, data, created_at, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data), updated_at = VALUES(updated_at)',
@@ -489,6 +506,102 @@ app.post('/api/meta/webhook', wrap(async (req, res) => {
 }));
 
 app.get('/api/inbound/lead', (req, res) => res.status(405).json({ error: 'use_post', code: 'use_post', message: 'POST JSON {name, phone|text, username} with header X-Webhook-Key' }));
+
+// ---- the personal link in a round message ---------------------------------
+// A round goes out over ordinary WhatsApp, and nothing can read the replies
+// that come back there. So each message carries the customer's own link, and
+// the answer is a button press that lands here: yes, not this time, or stop.
+// Whoever pressed nothing did not answer — no one has to keep score by hand.
+const ROUND_TOKEN = /^[a-f0-9]{16,64}$/;
+const htmlEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Orders close Wednesday 23:00 for the Sunday after. Worked out on Israel's
+// clock, because the server's own clock is not in Israel.
+function deliverySundayIL(now = new Date()) {
+  const il = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
+  const wed = new Date(il);
+  wed.setDate(il.getDate() + ((3 - il.getDay() + 7) % 7));
+  wed.setHours(23, 0, 0, 0);
+  if (wed <= il) wed.setDate(wed.getDate() + 7);
+  const sun = new Date(wed);
+  sun.setDate(wed.getDate() + 4);
+  const p = n => String(n).padStart(2, '0');
+  return `${sun.getFullYear()}-${p(sun.getMonth() + 1)}-${p(sun.getDate())}`;
+}
+const dayMonth = iso => `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}`;
+
+async function leadByRoundToken(token) {
+  if (!ROUND_TOKEN.test(token)) return null;
+  const [rows] = await pool.query('SELECT id, data FROM leads');
+  for (const r of rows) {
+    try { const l = JSON.parse(r.data); if (l.roundToken === token) return l; } catch { /* skip */ }
+  }
+  return null;
+}
+
+const roundPage = (title, body) => `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>RIBAK</title><meta property="og:title" content="RIBAK – המשלוח של השבוע"><meta property="og:description" content="אוכל מבושל טרי עד הבית">
+<style>
+body{margin:0;font-family:-apple-system,"Segoe UI",Arial,sans-serif;background:#0f1a1b;color:#eef4f4;display:grid;place-items:center;min-height:100vh}
+main{width:min(92vw,420px);padding:28px 22px;background:#162526;border-radius:18px;text-align:center;box-sizing:border-box}
+h1{font-size:22px;margin:0 0 6px}p{color:#b7c9ca;line-height:1.6;margin:0 0 20px;font-size:16px}
+button{display:block;width:100%;padding:15px;border-radius:12px;border:0;font:inherit;font-size:17px;font-weight:600;cursor:pointer;margin-bottom:10px}
+.yes{background:#39b5c0;color:#06272a}.no{background:#22393b;color:#eef4f4}.stop{background:none;color:#8aa0a1;font-size:14px;font-weight:400;text-decoration:underline}
+small{color:#8aa0a1}
+</style></head><body><main><h1>${title}</h1>${body}</main></body></html>`;
+
+app.get('/r/:token', wrap(async (req, res) => {
+  if (!pool) return res.status(503).end();
+  await ensureSchema();
+  const lead = await leadByRoundToken(String(req.params.token || ''));
+  res.set('Cache-Control', 'no-store');
+  if (!lead) return res.status(404).send(roundPage('הקישור לא נמצא', '<p>אפשר פשוט לענות לניב בוואטסאפ 🙏</p>'));
+  const first = String(lead.name || '').replace(/לקוחה?|שבוע ניסיון|ניסיון|מנוי/g, ' ').trim().split(/\s+/)[0] || '';
+  const week = deliverySundayIL();
+  // Opening the page records nothing: WhatsApp fetches every link once to
+  // draw its preview, and that must not count as anyone's answer.
+  res.send(roundPage(`היי ${htmlEsc(first)} 👋`, `
+    <div id="ask">
+      <p>רוצה משלוח של ריבק ליום ראשון ${dayMonth(week)}?</p>
+      <button class="yes" data-a="order">כן, תשריינו לי משלוח</button>
+      <button class="no" data-a="decline">לא הפעם</button>
+      <button class="stop" data-a="stop">אל תשלחו לי יותר הודעות</button>
+    </div>
+    <script>
+      const done = { order: 'מעולה! רשמנו אותך למשלוח של יום ראשון ${dayMonth(week)}. ניב יחזור אליך בוואטסאפ לסגור פרטים 🙏', decline: 'אין בעיה, נדבר בפעם הבאה 🙏', stop: 'הוסרת מהרשימה. לא נשלח יותר הודעות.' };
+      document.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', async () => {
+        document.querySelectorAll('[data-a]').forEach(x => { x.disabled = true; });
+        try {
+          const r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: b.dataset.a }) });
+          if (!r.ok) throw new Error();
+          document.getElementById('ask').innerHTML = '<p>' + done[b.dataset.a] + '</p>';
+        } catch { document.getElementById('ask').innerHTML = '<p>משהו השתבש. אפשר פשוט לענות לניב בוואטסאפ 🙏</p>'; }
+      }));
+    </script>`));
+}));
+
+app.post('/r/:token', wrap(async (req, res) => {
+  if (!pool) return res.status(503).end();
+  await ensureSchema();
+  const action = String((req.body && req.body.action) || '');
+  if (!['order', 'decline', 'stop'].includes(action)) return res.status(400).json({ error: 'bad_action' });
+  const lead = await leadByRoundToken(String(req.params.token || ''));
+  if (!lead) return res.status(404).json({ error: 'not_found' });
+  const now = new Date().toISOString();
+  const ev = action === 'order' ? { t: now, type: 'ordered', week: deliverySundayIL(), via: 'link' }
+    : action === 'decline' ? { t: now, type: 'declined', via: 'link' }
+      : { t: now, type: 'optout', via: 'link' };
+  // Pressing the same button twice is one answer.
+  const last = (lead.events || []).filter(e => e.via === 'link').pop();
+  if (!(last && last.type === ev.type && (ev.type !== 'ordered' || last.week === ev.week))) {
+    lead.events = [...(lead.events || []), ev];
+  }
+  if (action === 'stop') lead.noMarketing = true;
+  lead.updatedAt = now;
+  await pool.query('UPDATE leads SET data = ?, updated_at = ? WHERE id = ?', [JSON.stringify(lead), toSqlDate(now), lead.id]);
+  res.json({ ok: true });
+}));
 
 app.use('/api', leadsRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found', code: 'not_found' }));

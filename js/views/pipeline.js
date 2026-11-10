@@ -1,4 +1,4 @@
-import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adLabel, lastNudge, lastOrder, inRounds, dueForRound, firstName, ROUND_GAP_DAYS } from '../model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adLabel, lastNudge, lastOrder, inRounds, dueForRound, firstName, roundAnswer, ROUND_GAP_DAYS } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays, sundayOf, normPhone } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
 import { copyBtn, toast, openModal, field, formData, openMenu, copyToClipboard } from '../ui.js';
@@ -318,12 +318,12 @@ function futureCard(l) {
 // so they stay in sight at the end of the board rather than behind a
 // toggle with the losses.
 const upcomingOrder = l => { const o = lastOrder(l); return o && o.week && o.week >= sundayOf(new Date()) ? o : null; };
-const awaitingReply = l => {
+const recentNudge = l => {
   const n = lastNudge(l);
-  if (!n || Date.now() - new Date(n.t).getTime() > ROUND_GAP_DAYS * 86400000) return null;
-  const o = lastOrder(l);
-  return o && o.t > n.t ? null : n;
+  return n && Date.now() - new Date(n.t).getTime() <= ROUND_GAP_DAYS * 86400000 ? n : null;
 };
+const awaitingReply = l => (recentNudge(l) && !roundAnswer(l) ? recentNudge(l) : null);
+const saidNotNow = l => { const a = recentNudge(l) && roundAnswer(l); return a && a.type === 'declined' ? a : null; };
 const occRank = l => (l.noMarketing ? 3 : upcomingOrder(l) ? 0 : awaitingReply(l) ? 1 : 2);
 
 function occasionalColumn(leads) {
@@ -352,7 +352,8 @@ function occasionalColumn(leads) {
         </div>
         <div class="card__row">
           ${order ? `<span class="tag tag--done">✓ הזמין ל-${esc(fmtDate(order.week))}</span>` : ''}
-          ${!order && waiting ? `<span class="tag tag--warn">נשלח ${esc(fmtDate(waiting.t))} · מחכה לתשובה</span>` : ''}
+          ${!order && waiting ? `<span class="tag tag--warn">נשלח ${esc(fmtDate(waiting.t))} · עוד לא ענה</span>` : ''}
+          ${!order && saidNotNow(l) ? '<span class="tag">ענה: לא הפעם</span>' : ''}
           ${l.noMarketing ? '<span class="tag">הוסר מהודעות</span>' : ''}
         </div>
         <div class="card__actions">
@@ -373,11 +374,12 @@ function occasionalColumn(leads) {
 // them as written to. Nobody is picked twice inside two weeks, so pressing
 // it weekly with fifty at a time walks the list by itself. Replies are
 // marked on the card; whoever is not marked simply did not answer.
-const ROUND_MSG_KEY = 'ribak:roundMsg';
+const ROUND_MSG_KEY = 'ribak:roundMsg2';
 const DEFAULT_ROUND_MSG = `היי {שם}, ניב מריבק 👋
 השבוע בתפריט: [2–3 מנות].
-רוצה שאשריין לך משלוח ליום ראשון?
-(להסרה השיבו "הסר")`;
+רוצה משלוח ליום ראשון? לחיצה אחת כאן:
+{קישור}
+(באותו קישור אפשר גם לבקש שלא אכתוב יותר)`;
 
 function lastRoundLine(leads) {
   const days = leads.map(l => lastNudge(l)).filter(Boolean).map(n => isoDay(n.t)).sort();
@@ -385,9 +387,11 @@ function lastRoundLine(leads) {
   if (!day) return '';
   const sent = leads.filter(l => (l.events || []).some(e => e.type === 'nudged' && isoDay(e.t) === day));
   const after = l => (l.events || []).find(e => e.type === 'nudged' && isoDay(e.t) === day).t;
-  const ordered = sent.filter(l => (l.events || []).some(e => e.type === 'ordered' && e.t > after(l))).length;
+  const got = type => sent.filter(l => (l.events || []).some(e => e.type === type && e.t > after(l))).length;
+  const ordered = got('ordered'), declined = got('declined');
   const off = sent.filter(l => l.noMarketing).length;
-  return `הסבב האחרון (${fmtDate(day)}): נשלחו ${fmtNum(sent.length)} · הזמינו ${fmtNum(ordered)}${off ? ` · הסירו ${fmtNum(off)}` : ''}`;
+  const silent = Math.max(0, sent.length - ordered - declined - off);
+  return `הסבב האחרון (${fmtDate(day)}): נשלחו ${fmtNum(sent.length)} · הזמינו ${fmtNum(ordered)} · לא הפעם ${fmtNum(declined)} · הסירו ${fmtNum(off)} · לא ענו ${fmtNum(silent)}`;
 }
 
 function openRound(leads) {
@@ -410,8 +414,8 @@ function openRound(leads) {
       <form class="form" id="round-form">
         ${field('לכמה לשלוח עכשיו', `<input class="input" type="number" name="n" min="1" max="${due.length}" value="${Math.min(50, due.length)}">`,
     'עד 50 בפעם אחת שומר על המספר שלך בוואטסאפ ועל כמות התשובות שתצטרך לטפל בהן')}
-        ${field('ההודעה (להעתקה ל-JONI)', `<textarea class="input" name="msg" rows="5">${esc(msg)}</textarea>`,
-    'השם נמצא בקובץ בעמודה "שם" – שים במקומו את שדה השם של JONI')}
+        ${field('ההודעה (להעתקה ל-JONI)', `<textarea class="input" name="msg" rows="6">${esc(msg)}</textarea>`,
+    'ב-JONI החלף את {שם} ואת {קישור} בשדות "שם" ו"קישור" מהקובץ. הקישור אישי לכל אחד – הלחיצה שלו נרשמת כאן לבד.')}
       </form>`,
     footer: `<button class="btn" data-close>ביטול</button>
       <button class="btn" data-copy-msg>העתקת ההודעה</button>
@@ -427,14 +431,15 @@ function openRound(leads) {
     e.preventDefault();
     remember();
     const n = Math.max(1, Math.min(due.length, Number(form.n.value) || 0));
-    const batch = due.slice(0, n);
+    // Marked first: that is what gives each person the token their link is
+    // built from.
+    const batch = store.nudgeMany(due.slice(0, n).map(l => l.id));
     downloadXlsx(`ribak-round-${isoDay(new Date())}.xlsx`, [
-      ['מספר נייד', 'שם', 'שם מלא'],
-      ...batch.map(l => [`972${normPhone(l.phone).slice(1)}`, firstName(l.name), l.name]),
+      ['מספר נייד', 'שם', 'שם מלא', 'קישור'],
+      ...batch.map(l => [`972${normPhone(l.phone).slice(1)}`, firstName(l.name), l.name, `${location.origin}/r/${l.roundToken}`]),
     ], 'JONI');
-    store.nudgeMany(batch.map(l => l.id));
     m.close();
-    toast(`${fmtNum(batch.length)} בקובץ וסומנו כנשלח. מי שעונה – סמן על הכרטיס שלו`, 'good');
+    toast(`${fmtNum(batch.length)} בקובץ וסומנו כנשלח. התשובות יירשמו כאן לבד`, 'good');
   });
 }
 

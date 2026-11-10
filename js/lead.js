@@ -472,7 +472,9 @@ function paintDrawer(panel) {
     if (ev.type === 'attempt') text = `ניסיון ${ev.channel === 'whatsapp' ? 'בוואטסאפ' : 'טלפוני'} ללא מענה`;
     if (ev.type === 'talked') text = 'שיחה טלפונית';
     if (ev.type === 'occasional') text = 'עבר למזמינים מדי פעם';
-    if (ev.type === 'ordered') text = `הזמין משלוח${ev.week ? ` ליום ראשון ${fmtDate(ev.week)}` : ''}`;
+    if (ev.type === 'ordered') text = `הזמין משלוח${ev.week ? ` ליום ראשון ${fmtDate(ev.week)}` : ''}${ev.via === 'link' ? ' (לחץ בקישור)' : ''}`;
+    if (ev.type === 'declined') text = 'ענה בקישור: לא הפעם';
+    if (ev.type === 'optout') text = 'ביקש בקישור שלא לקבל הודעות';
     if (ev.type === 'note') text = ev.text;
     return `<li class="tl__item tl__item--${ev.type}">
       <span class="tl__dot"></span>

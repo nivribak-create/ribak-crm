@@ -132,6 +132,13 @@ export const ROUND_GAP_DAYS = 14;
 const lastOf = (l, type) => (l.events || []).filter(e => e.type === type).pop() || null;
 export const lastNudge = l => lastOf(l, 'nudged');
 export const lastOrder = l => lastOf(l, 'ordered');
+// What came back after the last message, if anything: an order, a "not this
+// time", or a request to stop. Nothing at all means they did not answer.
+export function roundAnswer(l) {
+  const n = lastNudge(l);
+  if (!n) return null;
+  return (l.events || []).filter(e => ['ordered', 'declined', 'optout'].includes(e.type) && e.t > n.t).pop() || null;
+}
 export const inRounds = l => l.status === 'occasional' && !l.noMarketing;
 export function dueForRound(l, now = Date.now()) {
   if (!inRounds(l)) return false;
@@ -258,4 +265,6 @@ export const EVENT_LABELS = {
   occasional: 'עבר למזמינים מדי פעם',
   nudged:   'נשלחה הודעת סבב',
   ordered:  'הזמין משלוח',
+  declined: 'ענה: לא הפעם',
+  optout:   'ביקש הסרה מהודעות',
 };
