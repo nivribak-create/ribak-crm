@@ -397,7 +397,11 @@ export function importOccasionalMany(rows) {
 }
 
 // ---- message rounds -----------------------------------------------------
-const newToken = () => [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
+// Nine characters is short enough to look like a link someone meant to send
+// and long enough that nobody guesses one. No 0/o, 1/l or i: they get
+// misread when a link is typed or read out.
+const TOKEN_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+const newToken = () => [...crypto.getRandomValues(new Uint8Array(9))].map(b => TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]).join('');
 // Marks a batch as written to and returns it, each with the token its
 // answer link is built from — the file for the sender is made from these.
 export function nudgeMany(ids) {
@@ -544,7 +548,7 @@ function normalizeLead(raw) {
     // Asked not to be messaged. Checked before every round, for good.
     noMarketing: Boolean(raw.noMarketing),
     // The key to this person's own answer link in a round message.
-    roundToken: /^[a-f0-9]{16,64}$/.test(raw.roundToken || '') ? raw.roundToken : '',
+    roundToken: /^[a-z0-9]{8,64}$/.test(raw.roundToken || '') ? raw.roundToken : '',
     deliveryWeek: /^\d{4}-\d{2}-\d{2}$/.test(raw.deliveryWeek || '') ? raw.deliveryWeek : '',
     adId: String(raw.adId || '').replace(/[^0-9]/g, '').slice(0, 32),
     // Meta's own ids for the form submissions behind this lead, kept so a

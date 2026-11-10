@@ -512,7 +512,7 @@ app.get('/api/inbound/lead', (req, res) => res.status(405).json({ error: 'use_po
 // that come back there. So each message carries the customer's own link, and
 // the answer is a button press that lands here: yes, not this time, or stop.
 // Whoever pressed nothing did not answer — no one has to keep score by hand.
-const ROUND_TOKEN = /^[a-f0-9]{16,64}$/;
+const ROUND_TOKEN = /^[a-z0-9]{8,64}$/;
 const htmlEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Orders close Wednesday 23:00 for the Sunday after. Worked out on Israel's
@@ -573,10 +573,10 @@ h1{font-weight:900;font-size:clamp(40px,12.5vw,58px);line-height:1.02;letter-spa
 .err{color:#b42318;font-weight:700;margin:0 0 14px}
 @media (prefers-reduced-motion:reduce){[data-state=order] .stamp{animation:none;transform:rotate(-7deg);opacity:1}}
 `;
-const roundShell = body => `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+const roundShell = (body, origin = '') => `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><meta name="theme-color" content="#fafaf8">
 <title>RIBAK</title>
-<meta property="og:title" content="RIBAK | המשלוח של השבוע"><meta property="og:description" content="שף פרטי. במקרר שלך."><meta property="og:image" content="/r/_og.jpg">
+<meta property="og:title" content="RIBAK | המשלוח של השבוע"><meta property="og:description" content="שף פרטי. במקרר שלך."><meta property="og:image" content="${origin}/r/_og.jpg"><meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;800;900&display=swap" rel="stylesheet">
 <style>${ROUND_CSS}</style></head><body><main id="page">
@@ -584,10 +584,14 @@ const roundShell = body => `<!doctype html><html lang="he" dir="rtl"><head><meta
 ${body}
 </main></body></html>`;
 
-const roundNotFound = () => roundShell(`<h1>הקישור הזה כבר לא פעיל.</h1>
-<p class="answer">אפשר פשוט לענות לניב בוואטסאפ.</p>`);
+const roundNotFound = origin => roundShell(`<h1>הקישור הזה כבר לא פעיל.</h1>
+<p class="answer">אפשר פשוט לענות לניב בוואטסאפ.</p>`, origin);
 
-const roundPage = ({ first, week, demo }) => roundShell(`
+// The address the customer actually used — which, behind a forwarding rule
+// on another domain, is that domain and not this server's own.
+const publicOrigin = req => `https://${String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim()}`;
+
+const roundPage = ({ first, week, demo, origin }) => roundShell(`
 <h1>${first ? `היי ${htmlEsc(first)}.<br>` : ''}אוכל מוכן לשבוע הבא?</h1>
 <div class="tag">
   <p class="tag__day">המשלוח הבא, יום ראשון</p>
@@ -629,7 +633,7 @@ const roundPage = ({ first, week, demo }) => roundShell(`
     });
   });
 })();
-</script>`);
+</script>`, origin);
 
 // The page's own images sit under /r/ too, so that the whole thing can be
 // served from another domain with a single forwarding rule.
@@ -644,11 +648,11 @@ app.get('/r/:token', wrap(async (req, res) => {
   const demo = req.params.token === 'demo';
   const lead = demo ? { name: 'ניב' } : await leadByRoundToken(String(req.params.token || ''));
   res.set('Cache-Control', 'no-store');
-  if (!lead) return res.status(404).send(roundNotFound());
+  if (!lead) return res.status(404).send(roundNotFound(publicOrigin(req)));
   const first = String(lead.name || '').replace(/לקוחה?|שבוע ניסיון|ניסיון|מנוי/g, ' ').trim().split(/\s+/)[0] || '';
   // Opening the page records nothing: WhatsApp fetches every link once to
   // draw its preview, and that must not count as anyone's answer.
-  res.send(roundPage({ first, week: deliverySundayIL(), demo }));
+  res.send(roundPage({ first, week: deliverySundayIL(), demo, origin: publicOrigin(req) }));
 }));
 
 app.post('/r/:token', wrap(async (req, res) => {
