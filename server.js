@@ -12,6 +12,10 @@
 //                       automations (ManyChat, a website form, Make, n8n…)
 //                       that push leads in. Several keys, comma separated,
 //                       so one sender can be cut off without the others.
+//   MAIL_USER, MAIL_PASS – optional; a mailbox that sends an email whenever a
+//                       lead comes in (for Gmail: the address and an "app
+//                       password"). MAIL_TO (default: MAIL_USER) is who gets
+//                       it; MAIL_HOST / MAIL_PORT default to Gmail's.
 
 const path = require('path');
 const crypto = require('crypto');
@@ -181,6 +185,26 @@ leadsRouter.get('/leads', wrap(async (req, res) => {
   res.json({ leads, settings });
 }));
 
+// Whether the lead email is set up, and a way to try it without waiting for a
+// lead. Says what went wrong, never the password.
+leadsRouter.get('/mail', (req, res) => res.json({
+  configured: mailConfigured, library: Boolean(nodemailer),
+  missing: ['MAIL_USER', 'MAIL_PASS'].filter(k => !cleanEnv(process.env[k])),
+  ...mailState,
+}));
+leadsRouter.post('/mail/test', wrap(async (req, res) => {
+  if (!mailer) return res.status(503).json({ ok: false, error: 'mail_not_configured', code: 'mail_not_configured' });
+  try {
+    await sendMail(leadMail(
+      { name: 'ליד בדיקה', phone: '0500000000', source: 'אינסטגרם – ממומן', adId: '120253935192800236' },
+      { notes: 'זה מייל בדיקה מה-CRM. לא נוצר ליד.' },
+    ));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'mail_failed', code: 'mail_failed', message: mailState.lastError });
+  }
+}));
+
 const validLead = l => l && typeof l === 'object' && typeof l.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(l.id);
 
 leadsRouter.put('/leads/:id', wrap(async (req, res) => {
@@ -309,6 +333,114 @@ async function canonicalInfluencer(raw) {
   return /^[A-Za-z0-9._-]+$/.test(given) ? `@${given}` : raw;
 }
 
+// ---- an email when a lead comes in -----------------------------------------
+// A lead that waits an hour is half lost, and nobody keeps a CRM tab open all
+// day. The mailbox is the owner's own, so nothing is sent to anyone else.
+// nodemailer is loaded softly: a failed install must not take the CRM down.
+let nodemailer = null;
+try { nodemailer = require('nodemailer'); } catch { /* mail simply stays off */ }
+// A value pasted into a hosting panel picks up a trailing space or a pair of
+// quotes more often than anything else, and then it is "wrong" while looking
+// exactly right to the eye.
+const cleanEnv = v => String(v || '').trim().replace(/^["']+|["']+$/g, '').trim();
+const MAIL_USER = cleanEnv(process.env.MAIL_USER);
+const MAIL_HOST = cleanEnv(process.env.MAIL_HOST) || 'smtp.gmail.com';
+const MAIL_PORT = Number(process.env.MAIL_PORT) || 465;
+// Google shows an app password in four groups; the spaces are not part of it.
+const MAIL_PASS = cleanEnv(process.env.MAIL_PASS).replace(/\s+/g, '');
+const MAIL_TO = cleanEnv(process.env.MAIL_TO) || MAIL_USER;
+const CRM_URL = (cleanEnv(process.env.CRM_URL) || 'https://blanchedalmond-yak-848858.hostingersite.com').replace(/\/$/, '');
+const mailConfigured = Boolean(nodemailer && MAIL_USER && MAIL_PASS && MAIL_TO);
+const mailer = mailConfigured ? nodemailer.createTransport({
+  host: MAIL_HOST, port: MAIL_PORT, secure: MAIL_PORT === 465,
+  auth: { user: MAIL_USER, pass: MAIL_PASS },
+  connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000,
+}) : null;
+const mailState = { sent: 0, lastSentAt: null, lastError: null, lastErrorAt: null };
+// A flood of junk through the public form must not burn the mailbox's daily
+// allowance, or get it locked.
+const MAIL_LIMIT = 40, MAIL_WINDOW = 60 * 60 * 1000;
+let mailTimes = [];
+
+// Keep in step with TEST_ADS and AD_VIDEOS in js/model.js.
+const MAIL_ADS = {
+  '120253935192800236': 'B1 · דף נחיתה · "הכל מוכן לי" · מיקה שיין',
+  '120253935180300236': 'B2 · דף נחיתה · "כל האוכל לכל השבוע" · מיקה שיין',
+  '120253935195690236': 'B3 · דף נחיתה · "למדוד חלבון וקלוריות" · גליה סמסון',
+  '120253935197110236': 'B4 · דף נחיתה · "ארוחות מאוזנות" · גליה סמסון',
+  '120253935152190236': 'A1 · DM · "הכל מוכן לי" · מיקה שיין',
+  '120253935157190236': 'A2 · DM · "כל האוכל לכל השבוע" · מיקה שיין',
+  '120253935157530236': 'A3 · DM · "למדוד חלבון וקלוריות" · גליה סמסון',
+  '120253935158430236': 'A4 · DM · "ארוחות מאוזנות" · גליה סמסון',
+};
+const mailEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const oneLine = v => String(v ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+function leadMail(lead, o = {}) {
+  const name = oneLine(o.name || lead.name) || 'בלי שם';
+  const phone = String(lead.phone || '').replace(/\D/g, '');
+  const adId = o.adId || lead.adId || '';
+  const ad = adId ? (MAIL_ADS[adId] || `לא מזוהה (${adId})`) : '';
+  const code = ad && MAIL_ADS[adId] ? ad.split(' · ').slice(0, 2).join(' ') : '';
+  const when = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const rows = [
+    ['שם', name],
+    ...(o.repeat && oneLine(lead.name) && oneLine(lead.name) !== name ? [['רשום ב-CRM בשם', oneLine(lead.name)]] : []),
+    ['טלפון', phone],
+    ['מקור', oneLine(o.source || lead.source)],
+    ...(ad ? [['מודעה', ad]] : []),
+    ...(lead.influencer || o.influencer ? [['משפיען', oneLine(o.influencer || lead.influencer)]] : []),
+    ...(o.text ? [['הודעה', oneLine(o.text).slice(0, 300)]] : []),
+    ...(o.username ? [['אינסטגרם', `@${oneLine(o.username)}`]] : []),
+    ...(o.notes ? [['הערות', oneLine(o.notes).slice(0, 300)]] : []),
+    ...(o.consentNote ? [['דיוור', o.consentNote]] : []),
+    ...(o.repeat ? [['מצב ב-CRM', lead.status === 'lost' ? 'סומן בעבר "לא רלוונטי"' : 'כבר קיים במערכת']] : []),
+    ['נכנס', when],
+  ];
+  const wa = /^05\d{8}$/.test(phone) ? `https://wa.me/972${phone.slice(1)}` : '';
+  const crm = lead.id ? `${CRM_URL}/#lead/${lead.id}` : CRM_URL;
+  const subject = oneLine(`${o.repeat ? 'פנייה חוזרת' : 'ליד חדש'}: ${name}${code ? ` · ${code}` : ''}`).slice(0, 150);
+  const text = [
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    '',
+    ...(wa ? [`וואטסאפ: ${wa}`] : []),
+    `לפתיחת הכרטיס ב-CRM: ${crm}`,
+  ].join('\n');
+  const btn = (href, label, bg) => `<a href="${mailEsc(href)}" style="display:inline-block;margin:0 0 8px 8px;padding:11px 18px;border-radius:8px;background:${bg};color:#ffffff;text-decoration:none;font-weight:bold">${label}</a>`;
+  const html = `<div dir="rtl" style="font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.5;color:#1c1c1c;text-align:right">
+<p style="margin:0 0 14px;font-size:20px;font-weight:bold">${o.repeat ? 'פנייה חוזרת' : 'ליד חדש'}: ${mailEsc(name)}</p>
+<table dir="rtl" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px">
+${rows.map(([k, v]) => `<tr><td style="padding:5px 0 5px 16px;color:#6b6b6b;white-space:nowrap;vertical-align:top">${mailEsc(k)}</td><td style="padding:5px 0;vertical-align:top">${k === 'טלפון' && v ? `<a href="tel:${mailEsc(v)}" style="color:#1c1c1c">${mailEsc(v)}</a>` : mailEsc(v)}</td></tr>`).join('\n')}
+</table>
+<p style="margin:0">${wa ? btn(wa, 'פתיחת וואטסאפ', '#1f8f4e') : ''}${phone ? btn(`tel:${phone}`, 'חיוג', '#2c4a7c') : ''}${btn(crm, 'פתיחת הכרטיס ב-CRM', '#444444')}</p>
+</div>`;
+  return { subject, text, html };
+}
+
+async function sendMail(msg) {
+  if (!mailer) { const e = new Error('mail_not_configured'); e.code = 'mail_not_configured'; throw e; }
+  try {
+    await mailer.sendMail({ from: { name: 'Ribak CRM', address: MAIL_USER }, to: MAIL_TO, ...msg });
+    mailState.sent += 1; mailState.lastSentAt = new Date().toISOString(); mailState.lastError = null; mailState.lastErrorAt = null;
+  } catch (e) {
+    // The code and the server's own short answer say what is wrong (a bad
+    // password, a blocked port) without printing the password.
+    mailState.lastError = `${e.code || 'error'}${e.responseCode ? ' ' + e.responseCode : ''}: ${oneLine(e.response || e.message).slice(0, 200)}`;
+    mailState.lastErrorAt = new Date().toISOString();
+    throw e;
+  }
+}
+
+// Never awaited by the caller: a lead is saved whether or not the mail goes.
+function notifyLead(lead, o) {
+  if (!mailer) return;
+  const now = Date.now();
+  mailTimes = mailTimes.filter(t => t > now - MAIL_WINDOW);
+  if (mailTimes.length >= MAIL_LIMIT) { console.warn(`lead mail skipped (more than ${MAIL_LIMIT} in an hour): ${lead.id}`); return; }
+  mailTimes.push(now);
+  sendMail(leadMail(lead, o)).catch(e => console.error(`lead mail failed for ${lead.id}: ${mailState.lastError || e.message}`));
+}
+
 // One place that turns "someone left their details" into a lead, so every
 // sender — a bot, a website form, a Meta lead form — behaves the same.
 async function ingestLead(b) {
@@ -374,6 +506,7 @@ async function ingestLead(b) {
     existing.updatedAt = now;
     if (existing.status === 'active' && !existing.nextAt) existing.nextAt = now.slice(0, 10);
     await pool.query('UPDATE leads SET data = ?, updated_at = ? WHERE id = ?', [JSON.stringify(existing), toSqlDate(now), existing.id]);
+    notifyLead(existing, { repeat: true, name: String(b.name || b.full_name || '').trim(), source, adId, influencer, text, username, consentNote });
     return { status: 200, body: { ok: true, created: false, id: existing.id } };
   }
   const lead = {
@@ -393,6 +526,7 @@ async function ingestLead(b) {
     ],
   };
   await pool.query('INSERT INTO leads (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)', [lead.id, JSON.stringify(lead), toSqlDate(now), toSqlDate(now)]);
+  notifyLead(lead, { text, username, consentNote, notes: lead.notes && lead.notes !== `@${username}` ? lead.notes : '' });
   return { status: 201, body: { ok: true, created: true, id: lead.id } };
 }
 
@@ -470,10 +604,8 @@ app.post('/api/public/lead', wrap(async (req, res) => {
 //                       endpoint this is
 //   META_APP_SECRET   – the app's secret; every delivery is signed with it
 //   META_PAGE_TOKEN   – a page access token with leads_retrieval
-// A secret pasted into a hosting panel picks up a trailing space or a pair of
-// quotes more often than anything else, and then every signature "mismatches"
-// while looking exactly right to the eye.
-const cleanEnv = v => String(v || '').trim().replace(/^["']+|["']+$/g, '').trim();
+// (cleanEnv, above: a pasted secret with a stray space or quote makes every
+// signature "mismatch" while looking exactly right to the eye.)
 const META_VERIFY_TOKEN = cleanEnv(process.env.META_VERIFY_TOKEN);
 const META_APP_SECRET = cleanEnv(process.env.META_APP_SECRET);
 const META_PAGE_TOKEN = cleanEnv(process.env.META_PAGE_TOKEN);
