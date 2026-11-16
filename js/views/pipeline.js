@@ -1,4 +1,4 @@
-import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adLabel, lastNudge, lastOrder, inRounds, dueForRound, firstName, roundAnswer, ROUND_GAP_DAYS } from '../model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adInfo, lastNudge, lastOrder, inRounds, dueForRound, firstName, roundAnswer, ROUND_GAP_DAYS } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays, sundayOf, normPhone } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
 import { copyBtn, toast, openModal, field, formData, openMenu, copyToClipboard } from '../ui.js';
@@ -222,11 +222,11 @@ const sourceLabel = l => l.influencer || l.source;
 // A lead that came from an ad says so, and says which one — the creative
 // is the part worth knowing, not that it was paid.
 function adTag(l) {
-  if (!l.adId) return '';
-  const ad = store.getAds()[l.adId];
-  const label = adLabel(ad);
-  return `<span class="tag tag--paid" title="${ad && ad.campaign ? esc(ad.campaign) : 'ליד ממומן'}">
-    💰 ${label ? esc(label) : 'ממומן'}</span>`;
+  const ad = adInfo(l.adId, store.getAds());
+  if (!ad) return '';
+  if (!ad.known) return `<span class="tag tag--warn" title="מזהה מודעה שאין לו שם: ${esc(ad.id)}">💰 לא מזוהה</span>`;
+  return `<span class="tag tag--paid" title="${esc(ad.videoName || ad.campaign || 'ליד ממומן')}">
+    💰 ${esc(ad.code ? `${ad.code} · ${ad.armLabel}` : ad.label)}</span>`;
 }
 
 function weekTag(l) {

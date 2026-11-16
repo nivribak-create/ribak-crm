@@ -1170,3 +1170,10 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 /* Message rounds to the people who order now and then. */
 .col__round { margin-inline-start: auto; }
 .card--occasional.is-off { opacity: .55; }
+
+/* landing page against DM */
+.drawer__week--warn { color: var(--warn-soft-ink); }
+.ad-alert { background: var(--warn-soft); color: var(--warn-soft-ink); border-radius: var(--radius); padding: 9px 12px; margin: 0 14px 10px; font-size: 13.5px; }
+.table--ab .ab-arm { text-align: center; border-inline-start: 1px solid var(--line); }
+.table--ab td:nth-child(2), .table--ab td:nth-child(4), .table--ab thead tr:nth-child(2) th:nth-child(odd) { border-inline-start: 1px solid var(--line); }
+.table--ab .ab-total td { font-weight: 600; border-top: 1px solid var(--line-strong); }

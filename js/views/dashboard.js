@@ -1,4 +1,4 @@
-import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed } from '../model.js';
+import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS } from '../model.js';
 import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, fmtDate, isParked, sundayOf } from '../util.js';
@@ -28,6 +28,7 @@ export function render(root, state) {
     ${hasAny ? conversionCard(a) : ''}
     ${hasAny ? thisWeek(a) : ''}
     ${hasAny ? deliveryWeeksCard(state.leads) : ''}
+    ${hasAny ? abTestPanel(state.leads) : ''}
 
     <section class="panel">
       <header class="panel__head"><div><h2>לחזור אליהם היום</h2><p class="muted">לידים בטיפול עם פעולה מתוכננת להיום או באיחור</p></div></header>
@@ -109,46 +110,84 @@ const OUTCOME_CLASS = { open: 'active', subscriber: 'won', churned: 'churn', rep
 // only this side can answer, so the ad id rides along with the lead and
 // gets a name here.
 function adsPanel(leads) {
-  const withAd = leads.filter(l => l.adId);
-  if (!withAd.length) return '';
   const names = store.getAds();
   const by = new Map();
-  for (const l of withAd) {
-    const n = names[l.adId] || {};
-    const key = l.adId;
-    const row = by.get(key) || {
-      id: key,
-      ad: n.ad || `מודעה ${key.slice(-6)}`,
-      adset: n.adset || '',
-      campaign: n.campaign || '',
-      known: Boolean(n.ad),
-      total: 0, trial: 0, won: 0,
-    };
+  for (const l of leads) {
+    const ad = adInfo(l.adId, names);
+    // Paused ads were asked to be left out of the picture altogether.
+    if (!ad || ad.retired || l.contactOnly) continue;
+    const row = by.get(ad.id) || { ad, total: 0, trial: 0, paying: 0, won: 0 };
     row.total++;
     if (stageIndex(l.stage) >= stageIndex('trial')) row.trial++;
+    if (isPaying(l)) row.paying++;
     if (everSubscribed(l)) row.won++;
-    by.set(key, row);
+    by.set(ad.id, row);
   }
+  if (!by.size) return '';
   const rows = [...by.values()].sort((a, b) => b.total - a.total);
-  const unknown = rows.filter(r => !r.known).length;
   return `<section class="panel">
     <header class="panel__head"><div><h2>לפי מודעה</h2>
       <p class="muted">איזו מודעה הביאה ליד, ומה יצא ממנו</p></div>
       <button class="btn btn--sm" data-load-ads>טעינת שמות מודעות</button>
     </header>
     <div class="table-wrap"><table class="table">
-      <thead><tr><th>מודעה</th><th>סט</th><th class="num">לידים</th><th class="num">ניסיון</th><th class="num">מנוי</th></tr></thead>
+      <thead><tr><th>מודעה</th><th>זרוע</th><th class="num">לידים</th><th class="num">משלמים</th><th class="num">מנוי</th></tr></thead>
       <tbody>
-        ${rows.map(r => `<tr>
-          <td>${esc(r.ad)}${r.campaign ? `<br><small class="muted">${esc(r.campaign)}</small>` : ''}</td>
-          <td><small class="muted">${esc(r.adset || '–')}</small></td>
-          <td class="num">${fmtNum(r.total)}</td>
-          <td class="num">${fmtNum(r.trial)}</td>
-          <td class="num"><b>${fmtNum(r.won)}</b></td>
+        ${rows.map(({ ad, total, paying, won }) => `<tr>
+          <td>${ad.known ? esc(ad.code ? `${ad.code} · ${ad.videoName}` : ad.label) : `<span class="warn">לא מזוהה</span> <small class="muted" dir="ltr">${esc(ad.id)}</small>`}${ad.campaign ? `<br><small class="muted">${esc(ad.campaign)}</small>` : ''}</td>
+          <td><small class="muted">${esc(ad.armLabel || ad.adset || '–')}</small></td>
+          <td class="num">${fmtNum(total)}</td>
+          <td class="num">${fmtNum(paying)}</td>
+          <td class="num"><b>${fmtNum(won)}</b></td>
         </tr>`).join('')}
       </tbody>
     </table></div>
-    ${unknown ? `<p class="panel__note">${fmtNum(unknown)} מודעות עדיין בלי שם – לחץ "טעינת שמות מודעות" והדבק את הרשימה.</p>` : ''}
+  </section>`;
+}
+
+// ---- landing page against DM ---------------------------------------------
+// One video, two ways in. Meta knows what each ad cost; only this side knows
+// which leads ended up paying, so the table stops at paying customers and
+// the division by spend is done against Meta's numbers.
+function abTestPanel(leads) {
+  const names = store.getAds();
+  const cell = () => ({ leads: 0, paying: 0, revenue: 0 });
+  const grid = new Map(AD_VIDEOS.map(v => [v.n, Object.fromEntries(AD_ARMS.map(a => [a.id, cell()]))]));
+  const total = Object.fromEntries(AD_ARMS.map(a => [a.id, cell()]));
+  const unknown = new Map();
+  for (const l of leads) {
+    const ad = adInfo(l.adId, names);
+    if (!ad || l.contactOnly) continue;
+    if (!ad.known) { unknown.set(ad.id, (unknown.get(ad.id) || 0) + 1); continue; }
+    if (!ad.code) continue;
+    for (const c of [grid.get(ad.video)[ad.arm], total[ad.arm]]) {
+      c.leads++;
+      if (isPaying(l)) { c.paying++; c.revenue += paidTotal(l); }
+    }
+  }
+  const any = AD_ARMS.some(a => total[a.id].leads);
+  if (!any && !unknown.size) return '';
+  const pair = c => `<td class="num">${fmtNum(c.leads)}</td><td class="num"><b>${fmtNum(c.paying)}</b>${c.leads ? ` <small class="muted">${pct1(c.paying, c.leads)}%</small>` : ''}</td>`;
+  const revenue = AD_ARMS.filter(a => total[a.id].revenue).map(a => `${a.label} ₪${fmtNum(total[a.id].revenue)}`);
+  const ids = [...unknown.keys()];
+  return `<section class="panel">
+    <header class="panel__head"><div><h2>דף נחיתה מול DM</h2>
+      <p class="muted">אותם ארבעה סרטונים בשתי דרכים · כמה לידים הביא כל אחד וכמה מהם שילמו</p></div></header>
+    ${ids.length ? `<p class="ad-alert"><b>${fmtNum(ids.length)} ${ids.length === 1 ? 'מזהה מודעה לא מזוהה' : 'מזהי מודעות לא מזוהים'}</b>
+      (${(n => plural(n, 'ליד אחד', `${fmtNum(n)} לידים`))([...unknown.values()].reduce((a, b) => a + b, 0))}) – צריך לשלוח למי שמנהל את הקמפיין:
+      <span dir="ltr">${ids.map(esc).join(', ')}</span> ${copyBtn(ids.join(', '), 'העתקת המזהים')}</p>` : ''}
+    ${any ? `<div class="table-wrap"><table class="table table--ab">
+      <thead>
+        <tr><th rowspan="2">סרטון</th>${AD_ARMS.map(a => `<th colspan="2" class="ab-arm">${esc(a.label)} (${a.letter})</th>`).join('')}</tr>
+        <tr>${AD_ARMS.map(() => `<th class="num">לידים</th><th class="num">משלמים</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${AD_VIDEOS.map(v => `<tr><td>${v.n} · ${esc(v.name)}</td>${AD_ARMS.map(a => pair(grid.get(v.n)[a.id])).join('')}</tr>`).join('')}
+        <tr class="ab-total"><td>סה"כ</td>${AD_ARMS.map(a => pair(total[a.id])).join('')}</tr>
+      </tbody>
+    </table></div>
+    <p class="panel__note">משלם = סגר שבוע ניסיון, או שנרשם לו תשלום בכרטיס.${revenue.length ? ` הכנסה שנרשמה: ${esc(revenue.join(' · '))}.` : ''}
+      את ההוצאה לכל מודעה לוקחים ממטא ומחלקים במספר המשלמים.</p>` : ''}
   </section>`;
 }
 

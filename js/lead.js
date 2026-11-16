@@ -1,20 +1,52 @@
 // Lead dialogs and the detail drawer — shared by every view.
-import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo, onColdBoard, deliveryWeek, subscriptionWeek, adLabel } from './model.js';
+import { STAGES, STAGE_BY_ID, stageIndex, nextStage, LOST_REASONS, reasonLabel, SOURCES, INFLUENCER_SOURCE, STATUS, EVENT_LABELS, FINAL_STAGE, INFLUENCER_STATUSES, COLLAB_RE, handleFrom, DISQUALIFYING, talkedTo, onColdBoard, deliveryWeek, subscriptionWeek, adInfo, payments, paidTotal, isPaying } from './model.js';
 import * as store from './store.js';
 import { openModal, confirmDialog, toast, field, select, formData, copyBtn } from './ui.js';
 import { openScript } from './callscript.js';
 import { SALES_SCRIPT, visibleFields } from './scripts.js';
 import { preserve } from './render.js';
-import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso, phoneProblem, sundayOf } from './util.js';
+import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relDays, dueLabel, daysBetween, todayIso, phoneProblem, sundayOf, fmtNum } from './util.js';
 
 // Where a paid lead actually came from: campaign, audience, creative.
 function adLine(lead) {
-  if (!lead.adId) return '';
-  const ad = store.getAds()[lead.adId] || {};
-  const bits = [ad.campaign, ad.adset, adLabel(ad)].filter(Boolean);
-  return `<div class="drawer__week muted">💰 ליד ממומן${bits.length
-    ? ` · ${bits.map(esc).join(' · ')}`
-    : ` · מודעה ${esc(lead.adId.slice(-6))} (השמות עוד לא נטענו)`}</div>`;
+  const ad = adInfo(lead.adId, store.getAds());
+  if (!ad) return '';
+  const what = ad.code ? `${ad.armLabel} · ${ad.code} "${ad.videoName}"`
+    : ad.retired ? 'מודעה ישנה, לא חלק מהמבחן'
+    : ad.known ? [ad.campaign, ad.adset, ad.label].filter(Boolean).join(' · ')
+    : `מודעה לא מזוהה (${ad.id})`;
+  return `<div class="drawer__week ${ad.known ? 'muted' : 'drawer__week--warn'}">💰 ליד ממומן · ${esc(what)}</div>`;
+}
+
+const money = n => `₪${fmtNum(n)}`;
+
+// What this customer has paid. The amount is optional — a closed trial week
+// already says they paid — but it is what turns a count into revenue.
+function payLine(lead) {
+  if (!isPaying(lead)) return '';
+  const n = payments(lead).length;
+  const said = n ? `שילם ${money(paidTotal(lead))}${n > 1 ? ` · ${fmtNum(n)} תשלומים` : ''}` : 'לקוח משלם · הסכום לא נרשם';
+  return `<div class="drawer__week muted">💳 ${esc(said)}
+    <button class="linkish" data-act="pay" data-id="${lead.id}">${n ? 'תשלום נוסף' : 'רשום סכום'}</button></div>`;
+}
+
+export function openPaymentDialog(lead) {
+  const m = openModal({
+    title: `תשלום של ${lead.name}`,
+    body: `
+      <form class="form" id="pay-form">
+        ${field('כמה שילם (₪)', `<input class="input" name="amount" type="number" inputmode="decimal" min="1" step="any" required autofocus>`)}
+        ${field('מתי', `<input class="input" name="day" type="date" value="${esc(todayIso())}" max="${esc(todayIso())}">`)}
+      </form>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="pay-form">שמירה</button>`,
+  });
+  m.el.querySelector('#pay-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const d = formData(e.target);
+    if (!store.recordPayment(lead.id, d.amount, d.day)) { toast('צריך סכום גדול מאפס', 'warn'); return; }
+    toast(`נרשם תשלום של ${money(Number(d.amount))} · ${lead.name}`, 'good');
+    m.close();
+  });
 }
 
 const everSubscribedSafe = l => l.status === 'won' || l.status === 'churned';
@@ -363,6 +395,8 @@ export function handleAction(e) {
     case 'restore': restore(lead); break;
     case 'talked': store.logTalk(lead.id); toast(`נרשמה שיחה עם ${lead.name}`, 'good'); break;
     case 'week': openWeekDialog(lead); break;
+    case 'pay': openPaymentDialog(lead); break;
+    case 'unpay': store.removePayment(lead.id, b.dataset.t); toast('התשלום הוסר'); break;
     case 'occasional': openOccasionalDialog(lead); break;
     case 'ordered': { const w = store.recordOrder(lead.id); toast(`${lead.name} הזמין למשלוח של ${fmtDate(w)} 🎉`, 'good'); break; }
     case 'optout': store.setNoMarketing(lead.id, true); toast(`${lead.name} לא יקבל יותר הודעות`); break;
@@ -475,10 +509,11 @@ function paintDrawer(panel) {
     if (ev.type === 'ordered') text = `הזמין משלוח${ev.week ? ` ליום ראשון ${fmtDate(ev.week)}` : ''}${ev.via === 'link' ? ' (לחץ בקישור)' : ''}`;
     if (ev.type === 'declined') text = 'ענה בקישור: לא הפעם';
     if (ev.type === 'optout') text = 'ביקש בקישור שלא לקבל הודעות';
+    if (ev.type === 'paid') text = `שילם ${money(ev.amount)}`;
     if (ev.type === 'note') text = ev.text;
     return `<li class="tl__item tl__item--${ev.type}">
       <span class="tl__dot"></span>
-      <div class="tl__body"><div class="tl__text">${esc(text)}${ev.type === 'lost' && ev.text ? `<div class="tl__note">"${esc(ev.text)}"</div>` : ''}</div><time class="tl__time">${fmtDateTime(ev.t)}</time></div>
+      <div class="tl__body"><div class="tl__text">${esc(text)}${ev.type === 'lost' && ev.text ? `<div class="tl__note">"${esc(ev.text)}"</div>` : ''}${ev.type === 'paid' ? ` <button class="linkish" data-act="unpay" data-id="${lead.id}" data-t="${esc(ev.t)}">הסר</button>` : ''}</div><time class="tl__time">${fmtDateTime(ev.t)}</time></div>
     </li>`;
   }).join('');
 
@@ -494,6 +529,7 @@ function paintDrawer(panel) {
         <h2 class="drawer__name">${esc(lead.name)}</h2>
         <div class="drawer__sub">${statusTag}<span class="muted">נכנס ${fmtDateLong(lead.createdAt)} · ${esc(lead.source)}${lead.influencer ? ' · ' + esc(lead.influencer) : ''}</span></div>
         ${adLine(lead)}
+        ${payLine(lead)}
         ${deliveryWeek(lead) ? `<div class="drawer__week muted">🍲 ${stageIndex(lead.stage) === stageIndex('trial') ? 'מקבל את האוכל' : 'קיבל את האוכל'} ביום ראשון ${esc(fmtDate(deliveryWeek(lead)))}${subscriptionWeek(lead) && !everSubscribedSafe(lead) ? ` · מועמד למנוי של ${esc(fmtDate(subscriptionWeek(lead)))}` : ''}
           <button class="linkish" data-act="week" data-id="${lead.id}">שנה שבוע</button></div>` : ''}
       </div>

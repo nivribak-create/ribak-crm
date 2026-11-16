@@ -124,6 +124,65 @@ export function adLabel(ad) {
   return `${parts[0]} · ${parts[parts.length - 1]}`;
 }
 
+// ---- the landing page against the DM bot --------------------------------
+// The same four videos run twice: once sending people to the landing page
+// (B) and once into a DM with the bot (A). Meta hands a lead an ad id and
+// nothing else, so this table is what turns the id into an arm and a video.
+export const AD_ARMS = [
+  { id: 'lp', letter: 'B', label: 'דף נחיתה' },
+  { id: 'dm', letter: 'A', label: 'DM' },
+];
+export const AD_VIDEOS = [
+  { n: 1, name: 'הכל מוכן לי' },
+  { n: 2, name: 'כל האוכל לכל השבוע' },
+  { n: 3, name: 'למדוד חלבון וקלוריות' },
+  { n: 4, name: 'ארוחות מאוזנות' },
+];
+const TEST_ADS = {
+  '120253935192800236': ['lp', 1],
+  '120253935180300236': ['lp', 2],
+  '120253935195690236': ['lp', 3],
+  '120253935197110236': ['lp', 4],
+  '120253935152190236': ['dm', 1],
+  '120253935157190236': ['dm', 2],
+  '120253935157530236': ['dm', 3],
+  '120253935158430236': ['dm', 4],
+};
+// Paused before the test began. A lead carrying one of these was paid for,
+// but belongs to neither arm and is not a surprise worth flagging.
+const RETIRED_ADS = new Set([
+  '120253935160200236', '120253935168740236', '120253935170270236', '120253935172290236',
+]);
+
+// Everything worth saying about the ad behind a lead. `names` is the list
+// loaded from Meta for ads outside the test; an id found in neither place
+// is the one case that needs a person: it comes back with known:false.
+export function adInfo(adId, names = {}) {
+  const id = String(adId || '');
+  if (!id) return null;
+  const named = names[id] || {};
+  const base = { id, code: '', arm: '', armLabel: '', video: 0, videoName: '', retired: false, known: true,
+    campaign: named.campaign || '', adset: named.adset || '' };
+  const test = TEST_ADS[id];
+  if (test) {
+    const arm = AD_ARMS.find(a => a.id === test[0]);
+    const video = AD_VIDEOS.find(v => v.n === test[1]);
+    const code = `${arm.letter}${video.n}`;
+    return { ...base, code, arm: arm.id, armLabel: arm.label, video: video.n, videoName: video.name, label: code };
+  }
+  if (RETIRED_ADS.has(id)) return { ...base, retired: true, label: 'מודעה ישנה' };
+  const label = adLabel(named);
+  return { ...base, known: Boolean(label), label: label || 'לא מזוהה' };
+}
+
+// ---- payments ------------------------------------------------------------
+// A payment is a line on the timeline like everything else. Closing a trial
+// week is itself a payment, so a customer counts as paying from that step on
+// even when nobody typed in the amount.
+export const payments = l => (l.events || []).filter(e => e.type === 'paid');
+export const paidTotal = l => payments(l).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+export const isPaying = l => payments(l).length > 0 || stageIndex(l.stage) >= stageIndex('trial');
+
 // ---- message rounds to the people who order now and then ---------------
 // One rule carries the whole rhythm: nobody hears from you twice inside two
 // weeks. A round simply takes the people who have waited longest, so sending
@@ -267,4 +326,5 @@ export const EVENT_LABELS = {
   ordered:  'הזמין משלוח',
   declined: 'ענה: לא הפעם',
   optout:   'ביקש הסרה מהודעות',
+  paid:     'תשלום',
 };

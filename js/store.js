@@ -424,6 +424,26 @@ export function recordOrder(id) {
   patchLead(id, l => { l.events.push({ t: nowIso(), type: 'ordered', week }); });
   return week;
 }
+// Money that came in, on the day it came in. Kept on the timeline so the
+// cost of a paying customer can be worked out per ad.
+export function recordPayment(id, amount, day = '') {
+  const sum = Math.round(Number(amount) * 100) / 100;
+  if (!(sum > 0)) return false;
+  patchLead(id, l => {
+    const today = isoDay(new Date());
+    const t = /^\d{4}-\d{2}-\d{2}$/.test(day) && day < today ? new Date(`${day}T12:00:00`).toISOString() : nowIso();
+    l.events.push({ t, type: 'paid', amount: sum });
+    l.events.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
+  });
+  return true;
+}
+// A mistyped amount has to be able to go away, or the sums stop meaning anything.
+export function removePayment(id, t) {
+  patchLead(id, l => {
+    const i = l.events.findIndex(e => e.type === 'paid' && e.t === t);
+    if (i >= 0) l.events.splice(i, 1);
+  });
+}
 export function setNoMarketing(id, off) {
   patchLead(id, l => {
     l.noMarketing = Boolean(off);
