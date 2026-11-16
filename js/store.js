@@ -444,6 +444,10 @@ export function removePayment(id, t) {
     if (i >= 0) l.events.splice(i, 1);
   });
 }
+// The call back after a "yes" in a round link has been made.
+export function confirmOrder(id) {
+  patchLead(id, l => { l.events.push({ t: nowIso(), type: 'confirmed' }); });
+}
 export function setNoMarketing(id, off) {
   patchLead(id, l => {
     l.noMarketing = Boolean(off);

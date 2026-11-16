@@ -399,6 +399,7 @@ export function handleAction(e) {
     case 'unpay': store.removePayment(lead.id, b.dataset.t); toast('התשלום הוסר'); break;
     case 'occasional': openOccasionalDialog(lead); break;
     case 'ordered': { const w = store.recordOrder(lead.id); toast(`${lead.name} הזמין למשלוח של ${fmtDate(w)} 🎉`, 'good'); break; }
+    case 'confirm': store.confirmOrder(lead.id); toast(`${lead.name} · ההזמנה נסגרה`, 'good'); break;
     case 'optout': store.setNoMarketing(lead.id, true); toast(`${lead.name} לא יקבל יותר הודעות`); break;
     case 'optin': store.setNoMarketing(lead.id, false); toast(`${lead.name} חזר לרשימת ההודעות`); break;
     case 'edit': openLeadForm(lead); break;

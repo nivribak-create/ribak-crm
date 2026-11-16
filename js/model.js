@@ -201,6 +201,16 @@ export function roundAnswer(l) {
   return (l.events || []).filter(e => ['ordered', 'declined', 'optout'].includes(e.type) && e.t > n.t).pop() || null;
 }
 export const inRounds = l => l.status === 'occasional' && !l.noMarketing;
+// Pressed "yes" in a round message, and nobody has closed the order with
+// them yet. A yes in a link is a hand raised, not a sale: it needs one
+// WhatsApp back, and until then it is the most urgent card on the board.
+export function awaitingCallback(l, now = Date.now()) {
+  if (l.status !== 'occasional') return null;
+  const o = lastOrder(l);
+  if (!o || o.via !== 'link') return null;
+  if (o.week && o.week < sundayOf(new Date(now))) return null;
+  return (l.events || []).some(e => e.type === 'confirmed' && e.t >= o.t) ? null : o;
+}
 export function dueForRound(l, now = Date.now()) {
   if (!inRounds(l)) return false;
   const n = lastNudge(l);
@@ -329,4 +339,5 @@ export const EVENT_LABELS = {
   declined: 'ענה: לא הפעם',
   optout:   'ביקש הסרה מהודעות',
   paid:     'תשלום',
+  confirmed: 'ההזמנה נסגרה איתו',
 };

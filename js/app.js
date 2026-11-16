@@ -3,7 +3,7 @@ import { generateSample } from './sample.js';
 import { openLeadForm, openDrawer, closeDrawer } from './lead.js';
 import { installTooltips, toast, confirmDialog, openModal, copyToClipboard } from './ui.js';
 import { downloadText, fmtNum, esc } from './util.js';
-import { onColdBoard } from './model.js';
+import { onColdBoard, awaitingCallback } from './model.js';
 import { renderInto, uiIdle } from './render.js';
 import * as dashboard from './views/dashboard.js';
 import * as pipeline from './views/pipeline.js';
@@ -149,7 +149,8 @@ store.subscribe(state => {
 function updateChrome(state) {
   const active = state.leads.filter(l => l.status === 'active');
   const cold = active.filter(onColdBoard).length;
-  badge('badge', active.length - cold);
+  // Someone who pressed "yes" in a round message is work waiting, too.
+  badge('badge', active.length - cold + state.leads.filter(l => awaitingCallback(l)).length);
   badge('badge-cold', cold);
   document.getElementById('sample-banner').hidden = !state.settings.sample;
   document.getElementById('logout').hidden = state.mode !== 'remote';

@@ -1,4 +1,4 @@
-import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS } from '../model.js';
+import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS, awaitingCallback } from '../model.js';
 import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, fmtDate, isParked, sundayOf } from '../util.js';
@@ -421,8 +421,22 @@ function dueList(leads) {
   const due = leads
     .filter(l => l.status === 'active' && l.nextAt && !isParked(l) && daysBetween(today, l.nextAt) <= 0)
     .sort((a, b) => (a.nextAt < b.nextAt ? -1 : 1));
-  if (!due.length) return `<div class="empty">אין פולואפים שממתינים להיום. 👌</div>`;
-  return `<ul class="due-list">${due.map(l => {
+  // A "yes" pressed in a round message waits for one WhatsApp back.
+  const yes = leads.filter(l => awaitingCallback(l));
+  const yesRows = yes.map(l => `<li class="due" data-open="${l.id}">
+      <div class="due__main">
+        <b>${esc(l.name)}</b>
+        <span class="muted">ענה כן להודעת הסבב${awaitingCallback(l).week ? ` · משלוח ${esc(fmtDate(awaitingCallback(l).week))}` : ''}</span>
+      </div>
+      <span class="tag tag--done">לחזור אליו</span>
+      <div class="due__contact">
+        <a class="contact contact--tel" href="${telLink(l.phone)}" onclick="event.stopPropagation()">📞</a>
+        ${copyBtn(l.phone)}
+        <a class="contact contact--wa" href="${waLink(l.phone)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">וואטסאפ</a>
+      </div>
+    </li>`).join('');
+  if (!due.length && !yes.length) return `<div class="empty">אין פולואפים שממתינים להיום. 👌</div>`;
+  return `<ul class="due-list">${yesRows}${due.map(l => {
     const late = daysBetween(today, l.nextAt) < 0;
     return `<li class="due" data-open="${l.id}">
       <div class="due__main">
