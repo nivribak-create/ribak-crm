@@ -403,6 +403,63 @@ app.post('/api/inbound/lead', wrap(async (req, res) => {
   const out = await ingestLead(req.body && typeof req.body === 'object' ? req.body : {});
   res.status(out.status).json(out.body);
 }));
+
+// ---- the landing page's own form -------------------------------------------
+// POST /api/public/lead   Body: { name, phone, consent?, ad_id?, ref?, notes? }
+// A form in a browser cannot keep a secret, so this door takes no key. What
+// it has instead: it accepts only a name and an Israeli mobile, it can only
+// ever add a lead (never read one back), a hidden field catches the bots that
+// fill every input, and one address gets a handful of tries an hour.
+// FORM_ORIGINS (optional, comma-separated) names the sites allowed to post
+// from a browser; left unset, any site may.
+const FORM_ORIGINS = String(process.env.FORM_ORIGINS || '').split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean);
+const formHits = new Map();
+const FORM_LIMIT = 8, FORM_WINDOW = 60 * 60 * 1000;
+function formAllowed(ip) {
+  const now = Date.now();
+  if (formHits.size > 5000) for (const [k, v] of formHits) if (v.until < now) formHits.delete(k);
+  const h = formHits.get(ip);
+  if (!h || h.until < now) { formHits.set(ip, { count: 1, until: now + FORM_WINDOW }); return true; }
+  h.count += 1;
+  return h.count <= FORM_LIMIT;
+}
+function formCors(req, res) {
+  const origin = String(req.get('origin') || '').replace(/\/$/, '');
+  const ok = !FORM_ORIGINS.length || FORM_ORIGINS.includes(origin);
+  if (origin && ok) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  return ok;
+}
+app.options('/api/public/lead', (req, res) => { formCors(req, res); res.status(204).end(); });
+app.post('/api/public/lead', wrap(async (req, res) => {
+  if (!formCors(req, res)) return res.status(403).json({ error: 'origin_not_allowed', code: 'origin_not_allowed' });
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  // A person never sees this field; answering as if it worked gives a bot
+  // nothing to learn from.
+  if (String(b.company || '').trim()) return res.json({ ok: true });
+  if (!formAllowed(req.ip || 'unknown')) return res.status(429).json({ error: 'too_many_requests', code: 'too_many_requests' });
+  const name = String(b.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+  const phone = extractPhone(String(b.phone || ''));
+  if (!name) return res.status(422).json({ error: 'name_required', code: 'name_required' });
+  if (!phone) return res.status(422).json({ error: 'phone_invalid', code: 'phone_invalid' });
+  await ensureSchema();
+  await ingestLead({
+    name, phone,
+    // An ad's id or an influencer's ref decides the source on its own;
+    // without either, she simply found the page.
+    source: String(b.ad_id || '').replace(/[^0-9]/g, '') ? '' : 'אתר',
+    ad_id: b.ad_id, ref: b.ref,
+    notes: String(b.notes || 'דף נחיתה').slice(0, 480),
+    consent: b.consent,
+  });
+  // Whether the number was already known is nobody's business but ours.
+  res.json({ ok: true });
+}));
 // ---- Meta lead forms ------------------------------------------------------
 // A lead form lives inside Meta, so nothing here can read it directly:
 // Meta tells us a form was filled (an id and nothing else), and the details
