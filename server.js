@@ -440,8 +440,10 @@ app.post('/api/public/lead', wrap(async (req, res) => {
   if (!formCors(req, res)) return res.status(403).json({ error: 'origin_not_allowed', code: 'origin_not_allowed' });
   const b = req.body && typeof req.body === 'object' ? req.body : {};
   // A person never sees this field; answering as if it worked gives a bot
-  // nothing to learn from.
-  if (String(b.company || '').trim()) return res.json({ ok: true });
+  // nothing to learn from. It is deliberately not called "company": a
+  // browser's autofill fills a field with that name from the visitor's saved
+  // details, and a real lead was then thrown away as a bot.
+  if (String(b.hp || '').trim()) return res.json({ ok: true });
   if (!formAllowed(req.ip || 'unknown')) return res.status(429).json({ error: 'too_many_requests', code: 'too_many_requests' });
   const name = String(b.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
   const phone = extractPhone(String(b.phone || ''));
