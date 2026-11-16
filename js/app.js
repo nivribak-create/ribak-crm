@@ -5,6 +5,7 @@ import { installTooltips, toast, confirmDialog, openModal, copyToClipboard } fro
 import { downloadText, fmtNum, esc } from './util.js';
 import { onColdBoard, awaitingCallback } from './model.js';
 import { renderInto, uiIdle } from './render.js';
+import { pushStatus, enablePush, disablePush, testPush } from './push.js';
 import * as dashboard from './views/dashboard.js';
 import * as pipeline from './views/pipeline.js';
 import * as leads from './views/leads.js';
@@ -154,6 +155,8 @@ function updateChrome(state) {
   badge('badge-cold', cold);
   document.getElementById('sample-banner').hidden = !state.settings.sample;
   document.getElementById('logout').hidden = state.mode !== 'remote';
+  const bell = document.getElementById('push-btn');
+  if (bell.hidden !== (state.mode !== 'remote')) { bell.hidden = state.mode !== 'remote'; refreshBell(); }
   const mode = document.getElementById('mode');
   mode.hidden = state.mode !== 'local';
 }
@@ -195,6 +198,7 @@ document.addEventListener('click', e => {
     case 'data': openDataMenu(); break;
     case 'theme': toggleTheme(); break;
     case 'start-clean': startClean(); break;
+    case 'push': openPushDialog(); break;
     case 'logout': doLogout(); break;
   }
 });
@@ -202,6 +206,63 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !isLocked(store.getState())) { e.preventDefault(); openLeadForm(); }
 });
+
+// ---- notifications on this device ---------------------------------------
+async function refreshBell() {
+  const bell = document.getElementById('push-btn');
+  if (bell.hidden) return;
+  const on = (await pushStatus().catch(() => 'unsupported')) === 'on';
+  bell.classList.toggle('is-on', on);
+  bell.title = on ? 'התראות על לידים פעילות במכשיר הזה' : 'התראה למכשיר הזה כשנכנס ליד';
+}
+
+const PUSH_TEXT = {
+  off: 'כשנכנס ליד חדש, המכשיר הזה יקבל התראה, גם כשה-CRM סגור. לוחצים על הכפתור ומאשרים בחלון שהדפדפן פותח.',
+  on: 'ההתראות פעילות במכשיר הזה. כל ליד חדש יקפיץ התראה עם השם, המודעה והטלפון.',
+  blocked: 'הדפדפן חוסם התראות מהאתר הזה. לוחצים על הסמל שמשמאל לכתובת האתר, מאשרים "התראות", ואז לוחצים שוב על הפעמון.',
+  'ios-install': 'באייפון ההתראות עובדות רק מהאפליקציה שעל מסך הבית. בספארי: כפתור השיתוף, "הוסף למסך הבית", פותחים את Ribak CRM משם ולוחצים שוב על הפעמון.',
+  unsupported: 'הדפדפן הזה לא תומך בהתראות. אפשר להפעיל מכרום, במחשב או בטלפון.',
+};
+
+async function openPushDialog() {
+  const status = await pushStatus().catch(() => 'unsupported');
+  const m = openModal({
+    title: 'התראות על לידים',
+    body: `
+      <div class="data-menu">
+        <p class="modal__text">${esc(PUSH_TEXT[status])}</p>
+        ${status === 'off' ? '<button class="btn btn--primary" data-x="on">הפעלת התראות במכשיר הזה</button>' : ''}
+        ${status === 'on' ? '<button class="btn btn--primary" data-x="test">שליחת התראת בדיקה</button><button class="btn" data-x="off">כיבוי במכשיר הזה</button>' : ''}
+        <p class="field__hint">מפעילים בנפרד בכל מכשיר: בטלפון ובמחשב.</p>
+      </div>`,
+  });
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-x]');
+    if (!b || b.disabled) return;
+    b.disabled = true;
+    try {
+      if (b.dataset.x === 'on') {
+        await enablePush();
+        await testPush().catch(() => {});
+        toast('ההתראות הופעלו. שלחתי התראת בדיקה', 'good');
+      } else if (b.dataset.x === 'test') {
+        const out = await testPush();
+        toast(out.ok ? 'התראת בדיקה נשלחה' : 'ההתראה לא נשלחה. כבה והפעל מחדש', out.ok ? 'good' : 'warn');
+        b.disabled = false;
+        return;
+      } else {
+        await disablePush();
+        toast('ההתראות כובו במכשיר הזה');
+      }
+      m.close();
+    } catch (err) {
+      m.close();
+      if (err.message === 'blocked') openPushDialog();
+      else toast(`לא הצלחתי להפעיל התראות: ${err.message}`, 'warn');
+    }
+    refreshBell();
+  });
+}
 
 async function doLogout() {
   const ok = await confirmDialog({ title: 'יציאה', text: 'לצאת מהמערכת במכשיר הזה?', okLabel: 'יציאה' });
@@ -316,4 +377,10 @@ main.innerHTML = '<div class="empty">טוען…</div>';
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // A tapped notification asks the tab that is already open to show the lead.
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data?.type !== 'open' || !e.data.url) return;
+    const hash = new URL(e.data.url).hash;
+    if (hash) location.hash = hash;
+  });
 }

@@ -1185,3 +1185,11 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .col--yes { background: var(--accent-soft); }
 .col--yes .col__head { background: var(--accent-soft); }
 .card--yes { border-inline-start: 3px solid var(--good); }
+
+/* The bell carries a dot while this device gets lead notifications. */
+#push-btn { position: relative; }
+#push-btn.is-on { color: var(--accent, #0F7A84); }
+#push-btn.is-on::after {
+  content: ''; position: absolute; top: 7px; inset-inline-end: 7px;
+  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+}

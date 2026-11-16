@@ -60,6 +60,13 @@ async function ensureSchema() {
       k VARCHAR(64) NOT NULL PRIMARY KEY,
       v MEDIUMTEXT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  // The app saves `settings` whole, so anything the server alone must keep —
+  // its notification keys, the devices that asked for notifications — lives
+  // in a table of its own that no screen can read or overwrite.
+  await pool.query(`CREATE TABLE IF NOT EXISTS server_kv (
+      k VARCHAR(64) NOT NULL PRIMARY KEY,
+      v MEDIUMTEXT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   schemaReady = true;
   lastDbError = null;
 }
@@ -203,6 +210,33 @@ leadsRouter.post('/mail/test', wrap(async (req, res) => {
   } catch (e) {
     res.status(502).json({ ok: false, error: 'mail_failed', code: 'mail_failed', message: mailState.lastError });
   }
+}));
+
+// Notifications on a device: the page asks for the public key, hands back the
+// browser's subscription, and can ask for a test.
+leadsRouter.get('/push', wrap(async (req, res) => {
+  if (!webpush) return res.json({ supported: false, devices: 0 });
+  const subs = (await kvGet('push_subs')) || [];
+  res.json({ supported: true, publicKey: (await vapidKeys()).publicKey, devices: subs.length, ...pushState });
+}));
+leadsRouter.post('/push/subscribe', wrap(async (req, res) => {
+  if (!webpush) return res.status(503).json({ error: 'push_unavailable', code: 'push_unavailable' });
+  const sub = cleanSubscription(req.body && req.body.subscription);
+  if (!sub) return res.status(400).json({ error: 'bad_subscription', code: 'bad_subscription' });
+  const subs = ((await kvGet('push_subs')) || []).filter(s => s.endpoint !== sub.endpoint);
+  subs.push({ ...sub, addedAt: new Date().toISOString(), device: oneLine(req.get('user-agent')).slice(0, 160) });
+  await kvSet('push_subs', subs.slice(-20));
+  res.json({ ok: true, devices: Math.min(subs.length, 20) });
+}));
+leadsRouter.post('/push/unsubscribe', wrap(async (req, res) => {
+  const endpoint = String((req.body && req.body.endpoint) || '');
+  const subs = (await kvGet('push_subs')) || [];
+  await kvSet('push_subs', subs.filter(s => s.endpoint !== endpoint));
+  res.json({ ok: true });
+}));
+leadsRouter.post('/push/test', wrap(async (req, res) => {
+  const out = await pushAll({ title: 'התראת בדיקה מה-CRM', body: 'ככה תיראה התראה על ליד חדש. לא נוצר ליד.', url: './', tag: 'test' });
+  res.json({ ok: out.sent > 0, ...out, error: out.sent ? null : pushState.lastError });
 }));
 
 const validLead = l => l && typeof l === 'object' && typeof l.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(l.id);
@@ -431,14 +465,95 @@ async function sendMail(msg) {
   }
 }
 
-// Never awaited by the caller: a lead is saved whether or not the mail goes.
+// ---- a notification on the phone when a lead comes in ----------------------
+// The simpler of the two: nothing to set up in a hosting panel. A device that
+// has the CRM open asks once for permission, and from then on the browser
+// itself shows the notification, with the CRM closed. The server's key pair
+// is made on first use and kept in the database.
+let webpush = null;
+try { webpush = require('web-push'); } catch { /* notifications simply stay off */ }
+async function kvGet(k) {
+  const [rows] = await pool.query('SELECT v FROM server_kv WHERE k = ?', [k]);
+  if (!rows.length) return null;
+  try { return JSON.parse(rows[0].v); } catch { return null; }
+}
+const kvSet = (k, v) => pool.query('INSERT INTO server_kv (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)', [k, JSON.stringify(v)]);
+let vapid = null;
+async function vapidKeys() {
+  if (vapid) return vapid;
+  let v = await kvGet('vapid');
+  if (!v || !v.publicKey || !v.privateKey) {
+    // Two requests can get here together; whichever insert lands first wins
+    // and both read the same pair back.
+    await pool.query('INSERT IGNORE INTO server_kv (k, v) VALUES (?, ?)', ['vapid', JSON.stringify(webpush.generateVAPIDKeys())]);
+    v = await kvGet('vapid');
+  }
+  vapid = v;
+  return v;
+}
+// The server posts to whatever address a subscription names, so only the
+// browsers' own push services are accepted.
+const PUSH_HOSTS = /(^|\.)(fcm\.googleapis\.com|push\.apple\.com|push\.services\.mozilla\.com|notify\.windows\.com)$/;
+function cleanSubscription(sub) {
+  if (!sub || typeof sub !== 'object') return null;
+  const endpoint = String(sub.endpoint || '');
+  const p256dh = String((sub.keys && sub.keys.p256dh) || '');
+  const auth = String((sub.keys && sub.keys.auth) || '');
+  if (endpoint.length > 1000 || !/^[A-Za-z0-9_-]{20,200}$/.test(p256dh) || !/^[A-Za-z0-9_-]{8,100}$/.test(auth)) return null;
+  let u; try { u = new URL(endpoint); } catch { return null; }
+  if (u.protocol !== 'https:' || !PUSH_HOSTS.test(u.hostname)) return null;
+  return { endpoint, keys: { p256dh, auth } };
+}
+const pushState = { sent: 0, lastSentAt: null, lastError: null };
+async function pushAll(payload) {
+  if (!webpush || !pool) return { devices: 0, sent: 0 };
+  const subs = (await kvGet('push_subs')) || [];
+  if (!subs.length) return { devices: 0, sent: 0 };
+  const keys = await vapidKeys();
+  const gone = new Set();
+  let sent = 0, failed = '';
+  await Promise.all(subs.map(async s => {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, JSON.stringify(payload), {
+        vapidDetails: { subject: CRM_URL, publicKey: keys.publicKey, privateKey: keys.privateKey },
+        TTL: 12 * 3600, urgency: 'high', timeout: 15000,
+      });
+      sent += 1;
+    } catch (e) {
+      // 404 and 410 are the push service saying this device unsubscribed.
+      if (e.statusCode === 404 || e.statusCode === 410) gone.add(s.endpoint);
+      else failed = `${e.statusCode || e.code || 'error'}: ${oneLine(e.body || e.message).slice(0, 160)}`;
+    }
+  }));
+  if (gone.size) {
+    const now = (await kvGet('push_subs')) || [];
+    await kvSet('push_subs', now.filter(s => !gone.has(s.endpoint)));
+  }
+  if (sent) { pushState.sent += sent; pushState.lastSentAt = new Date().toISOString(); }
+  pushState.lastError = failed || null;
+  return { devices: subs.length - gone.size, sent };
+}
+function leadPush(lead, o = {}) {
+  const name = oneLine(o.name || lead.name) || 'בלי שם';
+  const adId = o.adId || lead.adId || '';
+  const ad = adId ? (MAIL_ADS[adId] ? MAIL_ADS[adId].split(' · ').slice(0, 2).join(' ') : 'מודעה לא מזוהה') : '';
+  return {
+    title: `${o.repeat ? 'פנייה חוזרת' : 'ליד חדש'}: ${name}`.slice(0, 80),
+    body: [ad || oneLine(o.source || lead.source), String(lead.phone || '')].filter(Boolean).join(' · ').slice(0, 120),
+    url: lead.id ? `./#lead/${lead.id}` : './',
+    tag: `lead-${lead.id || 'x'}`,
+  };
+}
+
+// Never awaited by the caller: a lead is saved whether or not anyone is told.
 function notifyLead(lead, o) {
-  if (!mailer) return;
+  if (!mailer && !webpush) return;
   const now = Date.now();
   mailTimes = mailTimes.filter(t => t > now - MAIL_WINDOW);
-  if (mailTimes.length >= MAIL_LIMIT) { console.warn(`lead mail skipped (more than ${MAIL_LIMIT} in an hour): ${lead.id}`); return; }
+  if (mailTimes.length >= MAIL_LIMIT) { console.warn(`lead notification skipped (more than ${MAIL_LIMIT} in an hour): ${lead.id}`); return; }
   mailTimes.push(now);
-  sendMail(leadMail(lead, o)).catch(e => console.error(`lead mail failed for ${lead.id}: ${mailState.lastError || e.message}`));
+  if (mailer) sendMail(leadMail(lead, o)).catch(e => console.error(`lead mail failed for ${lead.id}: ${mailState.lastError || e.message}`));
+  pushAll(leadPush(lead, o)).catch(e => console.error(`lead push failed for ${lead.id}: ${e.message}`));
 }
 
 // One place that turns "someone left their details" into a lead, so every

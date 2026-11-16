@@ -1,11 +1,11 @@
 // Network-first service worker: the app always tries the network, and
 // falls back to the last cached copy when offline. Bump VERSION on deploy
 // to drop stale caches.
-const VERSION = 'ribak-crm-v56';
+const VERSION = 'ribak-crm-v57';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest', './icons/icon.svg',
   './js/app.js', './js/model.js', './js/util.js', './js/store.js', './js/analytics.js', './js/sample.js',
-  './js/charts.js', './js/ui.js', './js/lead.js', './js/api.js', './js/import.js', './js/dnd.js', './js/render.js', './js/scripts.js', './js/callscript.js', './js/views/dashboard.js', './js/views/pipeline.js', './js/views/leads.js', './js/views/triage.js', './js/views/influencers.js', './js/views/magnet.js', './js/xlsx-write.js',
+  './js/charts.js', './js/ui.js', './js/lead.js', './js/api.js', './js/import.js', './js/dnd.js', './js/render.js', './js/scripts.js', './js/callscript.js', './js/push.js', './js/views/dashboard.js', './js/views/pipeline.js', './js/views/leads.js', './js/views/triage.js', './js/views/influencers.js', './js/views/magnet.js', './js/xlsx-write.js',
 ];
 
 self.addEventListener('install', e => {
@@ -26,4 +26,27 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
   );
+});
+
+// A lead came in: the server says so, and the notification is shown even
+// when no CRM tab is open.
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { /* a bare ping still gets shown */ }
+  e.waitUntil(self.registration.showNotification(d.title || 'Ribak CRM', {
+    body: d.body || '', tag: d.tag || undefined, renotify: Boolean(d.tag),
+    icon: './icons/icon-192.png', badge: './icons/icon-192.png',
+    dir: 'rtl', lang: 'he', data: { url: d.url || './' },
+  }));
+});
+// Tapping it opens the lead's card — in the tab that is already open, if any.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || './', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const tab = list.find(c => c.url.startsWith(self.registration.scope));
+    if (!tab) return self.clients.openWindow(url);
+    tab.postMessage({ type: 'open', url });
+    return tab.focus();
+  }));
 });
