@@ -134,7 +134,7 @@ function adsPanel(leads) {
       <thead><tr><th>מודעה</th><th>זרוע</th><th class="num">לידים</th><th class="num">משלמים</th><th class="num">מנוי</th></tr></thead>
       <tbody>
         ${rows.map(({ ad, total, paying, won }) => `<tr>
-          <td>${ad.known ? esc(ad.code ? `${ad.code} · ${ad.videoName}` : ad.label) : `<span class="warn">לא מזוהה</span> <small class="muted" dir="ltr">${esc(ad.id)}</small>`}${ad.campaign ? `<br><small class="muted">${esc(ad.campaign)}</small>` : ''}</td>
+          <td>${ad.known ? esc(ad.code ? `${ad.code} · ${ad.videoName}` : ad.label) + (ad.creator ? ` <small class="muted">${esc(ad.creator)}</small>` : '') : `<span class="warn">לא מזוהה</span> <small class="muted" dir="ltr">${esc(ad.id)}</small>`}${ad.campaign ? `<br><small class="muted">${esc(ad.campaign)}</small>` : ''}</td>
           <td><small class="muted">${esc(ad.armLabel || ad.adset || '–')}</small></td>
           <td class="num">${fmtNum(total)}</td>
           <td class="num">${fmtNum(paying)}</td>
@@ -167,12 +167,21 @@ function abTestPanel(leads) {
   }
   const any = AD_ARMS.some(a => total[a.id].leads);
   if (!any && !unknown.size) return '';
+  // The same numbers once more, added up per creator.
+  const creators = [...new Set(AD_VIDEOS.map(v => v.creator))].map(name => {
+    const vids = AD_VIDEOS.filter(v => v.creator === name);
+    const sum = Object.fromEntries(AD_ARMS.map(a => [a.id, vids.reduce((c, v) => {
+      const g = grid.get(v.n)[a.id];
+      return { leads: c.leads + g.leads, paying: c.paying + g.paying };
+    }, { leads: 0, paying: 0 })]));
+    return { name, videos: vids.map(v => v.n).join('+'), sum };
+  });
   const pair = c => `<td class="num">${fmtNum(c.leads)}</td><td class="num"><b>${fmtNum(c.paying)}</b>${c.leads ? ` <small class="muted">${pct1(c.paying, c.leads)}%</small>` : ''}</td>`;
   const revenue = AD_ARMS.filter(a => total[a.id].revenue).map(a => `${a.label} ₪${fmtNum(total[a.id].revenue)}`);
   const ids = [...unknown.keys()];
   return `<section class="panel">
     <header class="panel__head"><div><h2>דף נחיתה מול DM</h2>
-      <p class="muted">אותם ארבעה סרטונים בשתי דרכים · כמה לידים הביא כל אחד וכמה מהם שילמו</p></div></header>
+      <p class="muted">אותם ארבעה סרטונים בשתי דרכים · כמה לידים הביא כל סרטון וכל יוצרת, וכמה מהם שילמו</p></div></header>
     ${ids.length ? `<p class="ad-alert"><b>${fmtNum(ids.length)} ${ids.length === 1 ? 'מזהה מודעה לא מזוהה' : 'מזהי מודעות לא מזוהים'}</b>
       (${(n => plural(n, 'ליד אחד', `${fmtNum(n)} לידים`))([...unknown.values()].reduce((a, b) => a + b, 0))}) – צריך לשלוח למי שמנהל את הקמפיין:
       <span dir="ltr">${ids.map(esc).join(', ')}</span> ${copyBtn(ids.join(', '), 'העתקת המזהים')}</p>` : ''}
@@ -182,7 +191,8 @@ function abTestPanel(leads) {
         <tr>${AD_ARMS.map(() => `<th class="num">לידים</th><th class="num">משלמים</th>`).join('')}</tr>
       </thead>
       <tbody>
-        ${AD_VIDEOS.map(v => `<tr><td>${v.n} · ${esc(v.name)}</td>${AD_ARMS.map(a => pair(grid.get(v.n)[a.id])).join('')}</tr>`).join('')}
+        ${AD_VIDEOS.map(v => `<tr><td>${v.n} · ${esc(v.name)} <small class="muted">${esc(v.creator)}</small></td>${AD_ARMS.map(a => pair(grid.get(v.n)[a.id])).join('')}</tr>`).join('')}
+        ${creators.map((c, i) => `<tr class="ab-creator ${i ? '' : 'ab-total'}"><td>${esc(c.name)} <small class="muted">סרטונים ${c.videos}</small></td>${AD_ARMS.map(a => pair(c.sum[a.id])).join('')}</tr>`).join('')}
         <tr class="ab-total"><td>סה"כ</td>${AD_ARMS.map(a => pair(total[a.id])).join('')}</tr>
       </tbody>
     </table></div>

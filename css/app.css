@@ -1177,3 +1177,5 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .table--ab .ab-arm { text-align: center; border-inline-start: 1px solid var(--line); }
 .table--ab td:nth-child(2), .table--ab td:nth-child(4), .table--ab thead tr:nth-child(2) th:nth-child(odd) { border-inline-start: 1px solid var(--line); }
 .table--ab .ab-total td { font-weight: 600; border-top: 1px solid var(--line-strong); }
+.table--ab .ab-creator td { background: var(--surface-2); }
+.table--ab .ab-creator.ab-total td { font-weight: 400; }

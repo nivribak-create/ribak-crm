@@ -11,7 +11,7 @@ import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relD
 function adLine(lead) {
   const ad = adInfo(lead.adId, store.getAds());
   if (!ad) return '';
-  const what = ad.code ? `${ad.armLabel} · ${ad.code} "${ad.videoName}"`
+  const what = ad.code ? `${ad.armLabel} · ${ad.code} "${ad.videoName}" · ${ad.creator}`
     : ad.retired ? 'מודעה ישנה, לא חלק מהמבחן'
     : ad.known ? [ad.campaign, ad.adset, ad.label].filter(Boolean).join(' · ')
     : `מודעה לא מזוהה (${ad.id})`;

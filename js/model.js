@@ -132,11 +132,13 @@ export const AD_ARMS = [
   { id: 'lp', letter: 'B', label: 'דף נחיתה' },
   { id: 'dm', letter: 'A', label: 'DM' },
 ];
+// Each video was made by a content creator, and which of them brings paying
+// customers is as much the question as which arm does.
 export const AD_VIDEOS = [
-  { n: 1, name: 'הכל מוכן לי' },
-  { n: 2, name: 'כל האוכל לכל השבוע' },
-  { n: 3, name: 'למדוד חלבון וקלוריות' },
-  { n: 4, name: 'ארוחות מאוזנות' },
+  { n: 1, name: 'הכל מוכן לי', creator: 'מיקה שיין' },
+  { n: 2, name: 'כל האוכל לכל השבוע', creator: 'מיקה שיין' },
+  { n: 3, name: 'למדוד חלבון וקלוריות', creator: 'גליה סמסון' },
+  { n: 4, name: 'ארוחות מאוזנות', creator: 'גליה סמסון' },
 ];
 const TEST_ADS = {
   '120253935192800236': ['lp', 1],
@@ -161,14 +163,14 @@ export function adInfo(adId, names = {}) {
   const id = String(adId || '');
   if (!id) return null;
   const named = names[id] || {};
-  const base = { id, code: '', arm: '', armLabel: '', video: 0, videoName: '', retired: false, known: true,
+  const base = { id, code: '', arm: '', armLabel: '', video: 0, videoName: '', creator: '', retired: false, known: true,
     campaign: named.campaign || '', adset: named.adset || '' };
   const test = TEST_ADS[id];
   if (test) {
     const arm = AD_ARMS.find(a => a.id === test[0]);
     const video = AD_VIDEOS.find(v => v.n === test[1]);
     const code = `${arm.letter}${video.n}`;
-    return { ...base, code, arm: arm.id, armLabel: arm.label, video: video.n, videoName: video.name, label: code };
+    return { ...base, code, arm: arm.id, armLabel: arm.label, video: video.n, videoName: video.name, creator: video.creator, label: code };
   }
   if (RETIRED_ADS.has(id)) return { ...base, retired: true, label: 'מודעה ישנה' };
   const label = adLabel(named);

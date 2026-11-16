@@ -225,7 +225,7 @@ function adTag(l) {
   const ad = adInfo(l.adId, store.getAds());
   if (!ad) return '';
   if (!ad.known) return `<span class="tag tag--warn" title="מזהה מודעה שאין לו שם: ${esc(ad.id)}">💰 לא מזוהה</span>`;
-  return `<span class="tag tag--paid" title="${esc(ad.videoName || ad.campaign || 'ליד ממומן')}">
+  return `<span class="tag tag--paid" title="${esc(ad.code ? `${ad.videoName} · ${ad.creator}` : ad.campaign || 'ליד ממומן')}">
     💰 ${esc(ad.code ? `${ad.code} · ${ad.armLabel}` : ad.label)}</span>`;
 }
 
