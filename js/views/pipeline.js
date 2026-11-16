@@ -1,7 +1,7 @@
 import { STAGES, STAGE_BY_ID, stageIndex, reasonLabel, FINAL_STAGE, lastAction, onColdBoard, deliveryWeek, adInfo, lastNudge, lastOrder, inRounds, awaitingCallback, dueForRound, firstName, roundAnswer, ROUND_GAP_DAYS } from '../model.js';
 import { esc, fmtPhone, waLink, telLink, daysBetween, dueLabel, relDays, fmtNum, dueLater, parseDay, fmtDateLong, fmtDate, isoDay, addDays, sundayOf, normPhone } from '../util.js';
 import { actionButtons, handleAction, openDrawer, openLostDialog } from '../lead.js';
-import { copyBtn, toast, openModal, field, formData, openMenu, copyToClipboard } from '../ui.js';
+import { copyBtn, toast, openModal, field, formData, openMenu, copyToClipboard, confirmDialog } from '../ui.js';
 import { installDrag } from '../dnd.js';
 import * as store from '../store.js';
 import { readFile } from '../import.js';
@@ -454,7 +454,7 @@ function openRound(leads) {
   const m = openModal({
     title: 'סבב הודעות',
     body: `
-      ${stat ? `<p class="modal__text"><b>${esc(stat)}</b></p>` : ''}
+      ${stat ? `<p class="modal__text"><b>${esc(stat)}</b> <button class="linkish" type="button" data-undo-round>ביטול הסבב האחרון</button></p>` : ''}
       <p class="modal__text"><b>${fmtNum(due.length)}</b> מחכים להודעה.
         ${recent ? `<span class="muted">${fmtNum(recent)} קיבלו בשבועיים האחרונים או כבר הזמינו, ולא ייכללו.</span>` : ''}</p>
       <form class="form" id="round-form">
@@ -466,6 +466,17 @@ function openRound(leads) {
     footer: `<button class="btn" data-close>ביטול</button>
       <button class="btn" data-copy-msg>העתקת ההודעה</button>
       <button class="btn btn--primary" type="submit" form="round-form" ${due.length ? '' : 'disabled'}>הורדת הקובץ וסימון כנשלח</button>`,
+  });
+  m.el.querySelector('[data-undo-round]')?.addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'ביטול הסבב האחרון',
+      text: 'מי שסומן בסבב האחרון יחזור לחכות להודעה, כאילו הקובץ לא ירד. מי שכבר ענה נשאר כמו שהוא. מי שכבר קיבל את ההודעה בוואטסאפ יקבל אותה שוב בסבב הבא.',
+      okLabel: 'ביטול הסבב',
+    });
+    if (!ok) return;
+    const n = store.undoLastRound();
+    m.close();
+    toast(n ? `${fmtNum(n)} חזרו לחכות להודעה` : 'לא היה מה לבטל', 'good');
   });
   const form = m.el.querySelector('#round-form');
   const remember = () => { try { localStorage.setItem(ROUND_MSG_KEY, form.msg.value); } catch { /* ignore */ } };

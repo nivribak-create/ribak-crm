@@ -417,6 +417,28 @@ export function nudgeMany(ids) {
   if (changed.length) commit(leads, state.settings, { upsert: changed });
   return changed;
 }
+// Takes the last round back, as if the file had never been made: everyone
+// marked on that day waits for a message again. Their links keep working,
+// and anyone who already answered stays as they are — their answer is real.
+export function undoLastRound() {
+  const dayOf = e => isoDay(new Date(e.t));
+  const days = state.leads.flatMap(l => (l.events || []).filter(e => e.type === 'nudged').map(dayOf)).sort();
+  const day = days[days.length - 1];
+  if (!day) return 0;
+  const t = nowIso();
+  const changed = [];
+  const leads = state.leads.map(l => {
+    const sent = (l.events || []).filter(e => e.type === 'nudged' && dayOf(e) === day);
+    if (!sent.length) return l;
+    const first = sent[0].t;
+    if (l.events.some(e => ['ordered', 'declined', 'optout'].includes(e.type) && e.t > first)) return l;
+    const copy = { ...l, updatedAt: t, events: l.events.filter(e => !sent.includes(e)) };
+    changed.push(copy);
+    return copy;
+  });
+  if (changed.length) commit(leads, state.settings, { upsert: changed });
+  return changed.length;
+}
 // An order from someone who buys now and then: it names the Sunday it is
 // for, and they stay where they are instead of re-entering the pipeline.
 export function recordOrder(id) {
