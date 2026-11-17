@@ -180,12 +180,6 @@ export function adInfo(adId, names = {}) {
 // The eight test ads in reading order: the landing-page arm, then the DM arm.
 export const testAds = () => AD_ARMS.flatMap(a => AD_VIDEOS.map(v =>
   adInfo(Object.keys(TEST_ADS).find(id => TEST_ADS[id][0] === a.id && TEST_ADS[id][1] === v.n))));
-// When the test went live (16.11.2026, 12:24 in Israel). Only what came in
-// from then on is the test's; the older DM campaign that keeps running next
-// to it is deliberately left out. A paid lead with no ad id from this moment
-// on is taken as a DM lead: the DM arm's leads arrive without one.
-export const AD_TEST_START = '2026-11-16T10:24:00';
-
 // ---- payments ------------------------------------------------------------
 // A payment is a line on the timeline like everything else. Closing a trial
 // week is itself a payment, so a customer counts as paying from that step on

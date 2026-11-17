@@ -1,4 +1,4 @@
-import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS, awaitingCallback, testAds, AD_TEST_START } from '../model.js';
+import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS, awaitingCallback, testAds } from '../model.js';
 import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, fmtDate, isParked, sundayOf } from '../util.js';
@@ -153,7 +153,6 @@ function adsPanel(leads) {
 // ---- what the campaign brings in ----------------------------------------
 // One line per ad, read left to right as the money does: what it cost, how
 // many leads that bought, how many of them closed, what they paid.
-const PAID_SOURCE = 'אינסטגרם – ממומן';
 const shekel = n => `₪${n < 100 ? fmtNum(Math.round(n * 10) / 10) : fmtNum(Math.round(n))}`;
 
 function campaignRows(leads) {
@@ -163,7 +162,6 @@ function campaignRows(leads) {
   const ads = testAds().map(ad => ({ ...blank(ad.code, `${ad.videoName} · ${ad.creator}`), ad,
     spend: Number.isFinite(spend.byAd[ad.id]) ? spend.byAd[ad.id] : null }));
   const byId = new Map(ads.map(r => [r.ad.id, r]));
-  const stray = blank('לידים מה-DM בלי מזהה מודעה', 'מ-16.11 · חלקם אולי מהקמפיין הוותיק או הוקלדו ידנית');
   const unknown = new Map();
   const count = (r, l) => {
     r.leads++;
@@ -177,20 +175,20 @@ function campaignRows(leads) {
     if (ad && byId.has(ad.id)) { count(byId.get(ad.id), l); continue; }
     if (ad && ad.retired) continue;
     if (ad && !ad.known) unknown.set(ad.id, (unknown.get(ad.id) || 0) + 1);
-    if ((!ad || !ad.known) && l.source === PAID_SOURCE && String(l.createdAt || '') >= AD_TEST_START) count(stray, l);
   }
   const sum = (label, rows, sub = '') => rows.reduce((t, r) => ({
     ...t, leads: t.leads + r.leads, trial: t.trial + r.trial, subs: t.subs + r.subs, revenue: t.revenue + r.revenue,
     noAmount: t.noAmount + r.noAmount,
     spend: r.spend === null ? t.spend : (t.spend || 0) + r.spend,
   }), blank(label, sub));
-  // The DM arm's leads arrive without an ad id, so they are counted on the
-  // arm as a whole rather than on any one of its four ads.
-  const arms = AD_ARMS.map(a => ({ arm: a, rows: [...ads.filter(r => r.ad.arm === a.id), ...(a.id === 'dm' ? [stray] : [])] }))
+  // Only a lead that arrived by itself, carrying the id of one of the test's
+  // ads, is counted. Anything typed in by hand or without an id is left out:
+  // it cannot be tied to the test, and a guess would only blur the comparison.
+  const arms = AD_ARMS.map(a => ({ arm: a, rows: ads.filter(r => r.ad.arm === a.id) }))
     .map(g => ({ ...g, total: sum(`${g.arm.label} · סה"כ`, g.rows) }));
   const creators = [...new Set(AD_VIDEOS.map(v => v.creator))]
     .map(name => sum(name, ads.filter(r => r.ad.creator === name), `סרטונים ${AD_VIDEOS.filter(v => v.creator === name).map(v => v.n).join('+')}`));
-  return { arms, creators, unknown, spendAt: spend.at, total: sum('סה"כ הבדיקה', [...ads, stray]) };
+  return { arms, creators, unknown, spendAt: spend.at, total: sum('סה"כ הבדיקה', ads) };
 }
 
 function campaignPanel(leads) {
@@ -238,7 +236,7 @@ function campaignPanel(leads) {
       </tbody>
     </table></div>
     <p class="panel__note">סגר ניסיון = הגיע לשלב "סגר שבוע ניסיון" ומעלה, או שנרשם לו תשלום. הכנסה = הסכומים שנרשמו בכרטיסי הלקוחות.
-      החזר = הכנסה חלקי הוצאה. הקמפיין הוותיק של ה-DM לא נספר כאן, לא בהוצאה ולא בלידים שלפני 16.11.</p>
+      החזר = הכנסה חלקי הוצאה. נספרים רק לידים שנכנסו לבד עם מזהה של אחת ממודעות הבדיקה; לידים שהוקלדו ידנית או הגיעו בלי מזהה לא נספרים.</p>
   </section>`;
 }
 
