@@ -180,9 +180,12 @@ export function adInfo(adId, names = {}) {
 // The eight test ads in reading order: the landing-page arm, then the DM arm.
 export const testAds = () => AD_ARMS.flatMap(a => AD_VIDEOS.map(v =>
   adInfo(Object.keys(TEST_ADS).find(id => TEST_ADS[id][0] === a.id && TEST_ADS[id][1] === v.n))));
-// The day the test went live. A paid lead from then on that carries no ad id
-// still came from this campaign — the bot does not pass the id along yet.
-export const AD_TEST_START = '2026-11-16';
+// The DM campaign that was already running when the test began, and is still
+// on. Its leads come through the same bot as the test's DM arm, and the bot
+// does not pass an ad id along — so a paid lead with no ad id, from the day
+// this campaign started, is a DM lead, and which of the two DM campaigns sent
+// it cannot be told.
+export const LEGACY_DM = { id: '120253445466890236', label: 'הקמפיין הוותיק · DM "פרטים"', start: '2026-10-18' };
 
 // ---- payments ------------------------------------------------------------
 // A payment is a line on the timeline like everything else. Closing a trial

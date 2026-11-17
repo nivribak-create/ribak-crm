@@ -1,4 +1,4 @@
-import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS, awaitingCallback, testAds, AD_TEST_START } from '../model.js';
+import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS, awaitingCallback, testAds, LEGACY_DM } from '../model.js';
 import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, fmtDate, isParked, sundayOf } from '../util.js';
@@ -163,7 +163,9 @@ function campaignRows(leads) {
   const ads = testAds().map(ad => ({ ...blank(ad.code, `${ad.videoName} · ${ad.creator}`), ad,
     spend: Number.isFinite(spend.byAd[ad.id]) ? spend.byAd[ad.id] : null }));
   const byId = new Map(ads.map(r => [r.ad.id, r]));
-  const stray = blank('ממומן בלי מזהה מודעה', 'בעיקר מהבוט, שעוד לא מעביר את המזהה');
+  const legacy = { ...blank(LEGACY_DM.label, 'רץ מ-18.10, עדיין פעיל'),
+    spend: Number.isFinite(spend.byAd[LEGACY_DM.id]) ? spend.byAd[LEGACY_DM.id] : null };
+  const stray = blank('לידים מה-DM בלי מזהה מודעה', 'הבוט עוד לא מעביר מזהה, אז אי אפשר לשייך אותם למודעה');
   const unknown = new Map();
   const count = (r, l) => {
     r.leads++;
@@ -177,18 +179,21 @@ function campaignRows(leads) {
     if (ad && byId.has(ad.id)) { count(byId.get(ad.id), l); continue; }
     if (ad && ad.retired) continue;
     if (ad && !ad.known) unknown.set(ad.id, (unknown.get(ad.id) || 0) + 1);
-    if ((!ad || !ad.known) && l.source === PAID_SOURCE && String(l.createdAt || '') >= AD_TEST_START) count(stray, l);
+    if ((!ad || !ad.known) && l.source === PAID_SOURCE && String(l.createdAt || '') >= LEGACY_DM.start) count(stray, l);
   }
   const sum = (label, rows, sub = '') => rows.reduce((t, r) => ({
     ...t, leads: t.leads + r.leads, trial: t.trial + r.trial, subs: t.subs + r.subs, revenue: t.revenue + r.revenue,
     noAmount: t.noAmount + r.noAmount,
     spend: r.spend === null ? t.spend : (t.spend || 0) + r.spend,
   }), blank(label, sub));
-  const arms = AD_ARMS.map(a => ({ arm: a, rows: ads.filter(r => r.ad.arm === a.id) }))
-    .map(g => ({ ...g, total: sum(`${g.arm.label} (${g.arm.letter})`, g.rows) }));
+  // The DM side is the test's arm plus the older campaign plus every lead the
+  // bot brought without saying from where: one honest total instead of three
+  // lines that each tell half the story.
+  const arms = AD_ARMS.map(a => ({ arm: a, rows: [...ads.filter(r => r.ad.arm === a.id), ...(a.id === 'dm' ? [legacy, stray] : [])] }))
+    .map(g => ({ ...g, total: sum(g.arm.id === 'dm' ? 'DM · סה"כ' : `${g.arm.label} · סה"כ`, g.rows) }));
   const creators = [...new Set(AD_VIDEOS.map(v => v.creator))]
     .map(name => sum(name, ads.filter(r => r.ad.creator === name), `סרטונים ${AD_VIDEOS.filter(v => v.creator === name).map(v => v.n).join('+')}`));
-  return { arms, creators, stray, unknown, spendAt: spend.at, total: sum('סה"כ קמפיין', [...ads, stray]) };
+  return { arms, creators, unknown, spendAt: spend.at, total: sum('סה"כ ממומן', [...ads, legacy, stray]) };
 }
 
 function campaignPanel(leads) {
@@ -212,7 +217,7 @@ function campaignPanel(leads) {
   const missing = t.noAmount;
   return `<section class="panel">
     <header class="panel__head"><div><h2>כמה הקמפיין מכניס</h2>
-      <p class="muted">דף נחיתה מול DM, אותם ארבעה סרטונים · מה כל מודעה עלתה, כמה לידים הביאה, כמה סגרו וכמה שילמו</p></div>
+      <p class="muted">דף נחיתה מול DM · מה כל קמפיין עלה, כמה לידים הביא, כמה מהם סגרו וכמה שילמו</p></div>
       <div><button class="btn btn--sm" data-ad-spend>עדכון הוצאה ממטא</button>
         <p class="muted">${c.spendAt ? `הוצאה מעודכנת ל-${esc(fmtDateTime(c.spendAt))}` : 'ההוצאה עוד לא הוזנה'}</p></div></header>
     ${ids.length ? `<p class="ad-alert"><b>${fmtNum(ids.length)} ${ids.length === 1 ? 'מזהה מודעה לא מזוהה' : 'מזהי מודעות לא מזוהים'}</b>
@@ -232,12 +237,11 @@ function campaignPanel(leads) {
       <tbody>
         ${c.arms.map(g => g.rows.map(r => line(r)).join('') + line(g.total, 'camp-sum')).join('')}
         ${c.creators.map((r, i) => line(r, `camp-creator ${i ? '' : 'camp-first'}`)).join('')}
-        ${c.stray.leads ? line(c.stray, 'camp-first') : ''}
         ${line(t, 'camp-total')}
       </tbody>
     </table></div>
     <p class="panel__note">סגר ניסיון = הגיע לשלב "סגר שבוע ניסיון" ומעלה, או שנרשם לו תשלום. הכנסה = הסכומים שנרשמו בכרטיסי הלקוחות.
-      החזר = הכנסה חלקי הוצאה. לידים בלי מזהה מודעה נספרים רק בשורת "ממומן בלי מזהה" ובסה"כ.</p>
+      החזר = הכנסה חלקי הוצאה. ה-DM נספר מ-18.10 ודף הנחיתה מ-16.11, אז ללידים של ה-DM היה יותר זמן לסגור.</p>
   </section>`;
 }
 
@@ -247,9 +251,9 @@ function openSpendDialog() {
     title: 'הוצאה לכל מודעה',
     body: `
       <form class="form form--spend" id="spend-form">
-        <p class="modal__text">כמה כל מודעה עלתה עד עכשיו, בשקלים, כמו שמופיע במטא בעמודת "הסכום שהוצא".</p>
-        ${testAds().map(ad => field(`${ad.code} · ${ad.armLabel} · ${ad.videoName}`,
-          `<input class="input" name="${esc(ad.id)}" type="number" inputmode="decimal" min="0" step="any" value="${esc(spend.byAd[ad.id] ?? '')}">`)).join('')}
+        <p class="modal__text">כמה כל מודעה וכל קמפיין עלו עד עכשיו, בשקלים, כמו שמופיע במטא בעמודת "הסכום שהוצא".</p>
+        ${[...testAds().map(ad => [ad.id, `${ad.code} · ${ad.armLabel} · ${ad.videoName}`]), [LEGACY_DM.id, LEGACY_DM.label]].map(([id, label]) => field(label,
+          `<input class="input" name="${esc(id)}" type="number" inputmode="decimal" min="0" step="any" value="${esc(spend.byAd[id] ?? '')}">`)).join('')}
       </form>`,
     footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="spend-form">שמירה</button>`,
   });
