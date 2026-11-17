@@ -139,12 +139,15 @@ export const AD_VIDEOS = [
   { n: 2, name: 'כל האוכל לכל השבוע', creator: 'מיקה שיין' },
   { n: 3, name: 'למדוד חלבון וקלוריות', creator: 'גליה סמסון' },
   { n: 4, name: 'ארוחות מאוזנות', creator: 'גליה סמסון' },
+  // Added on 17.11, on the landing-page arm only.
+  { n: 5, name: 'חוסך זמן וכאב ראש', creator: 'מיקה שיין' },
 ];
 const TEST_ADS = {
   '120253935192800236': ['lp', 1],
   '120253935180300236': ['lp', 2],
   '120253935195690236': ['lp', 3],
   '120253935197110236': ['lp', 4],
+  '120253961397240236': ['lp', 5],
   '120253935152190236': ['dm', 1],
   '120253935157190236': ['dm', 2],
   '120253935157530236': ['dm', 3],
@@ -178,8 +181,9 @@ export function adInfo(adId, names = {}) {
 }
 
 // The eight test ads in reading order: the landing-page arm, then the DM arm.
+// A video does not have to run on both arms, so a missing pair is skipped.
 export const testAds = () => AD_ARMS.flatMap(a => AD_VIDEOS.map(v =>
-  adInfo(Object.keys(TEST_ADS).find(id => TEST_ADS[id][0] === a.id && TEST_ADS[id][1] === v.n))));
+  adInfo(Object.keys(TEST_ADS).find(id => TEST_ADS[id][0] === a.id && TEST_ADS[id][1] === v.n)))).filter(Boolean);
 // ---- payments ------------------------------------------------------------
 // A payment is a line on the timeline like everything else. Closing a trial
 // week is itself a payment, so a customer counts as paying from that step on
