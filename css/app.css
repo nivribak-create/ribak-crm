@@ -1174,11 +1174,14 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 /* landing page against DM */
 .drawer__week--warn { color: var(--warn-soft-ink); }
 .ad-alert { background: var(--warn-soft); color: var(--warn-soft-ink); border-radius: var(--radius); padding: 9px 12px; margin: 0 14px 10px; font-size: 13.5px; }
-.table--ab .ab-arm { text-align: center; border-inline-start: 1px solid var(--line); }
-.table--ab td:nth-child(2), .table--ab td:nth-child(4), .table--ab thead tr:nth-child(2) th:nth-child(odd) { border-inline-start: 1px solid var(--line); }
-.table--ab .ab-total td { font-weight: 600; border-top: 1px solid var(--line-strong); }
-.table--ab .ab-creator td { background: var(--surface-2); }
-.table--ab .ab-creator.ab-total td { font-weight: 400; }
+.table--camp .camp-sum td { font-weight: 600; background: var(--surface-2); }
+.table--camp .camp-creator td { color: var(--ink-2); }
+.table--camp .camp-first td { border-top: 1px solid var(--line-strong); }
+.table--camp .camp-total td { font-weight: 700; border-top: 2px solid var(--line-strong); }
+.table--camp td:first-child { white-space: nowrap; }
+.kpis--camp .kpi { background: var(--surface-2); padding: 10px 12px 8px; }
+.kpis--camp .kpi__value { font-size: 28px; }
+.form--spend .field { display: grid; grid-template-columns: 1fr 120px; align-items: center; gap: 10px; }
 
 /* pressed "yes" in a round message */
 .col--yes .col__dot { background: var(--good); }

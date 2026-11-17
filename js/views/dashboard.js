@@ -1,4 +1,4 @@
-import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS, awaitingCallback } from '../model.js';
+import { STAGE_BY_ID, SOURCES, OUTCOMES, viaMagnet, deliveryWeek, subscriptionWeek, stageIndex, everSubscribed, adInfo, isPaying, paidTotal, AD_ARMS, AD_VIDEOS, awaitingCallback, testAds, AD_TEST_START } from '../model.js';
 import { computeAnalytics, RANGES, dayReport } from '../analytics.js';
 import { hbars, meter } from '../charts.js';
 import { esc, fmtNum, pct1, plural, dueLabel, daysBetween, fmtPhone, waLink, telLink, deadlineLabel, fmtDateTime, fmtDateLong, fmtDate, isParked, sundayOf } from '../util.js';
@@ -28,7 +28,7 @@ export function render(root, state) {
     ${hasAny ? conversionCard(a) : ''}
     ${hasAny ? thisWeek(a) : ''}
     ${hasAny ? deliveryWeeksCard(state.leads) : ''}
-    ${hasAny ? abTestPanel(state.leads) : ''}
+    ${hasAny ? campaignPanel(state.leads) : ''}
 
     <section class="panel">
       <header class="panel__head"><div><h2>לחזור אליהם היום</h2><p class="muted">לידים בטיפול עם פעולה מתוכננת להיום או באיחור</p></div></header>
@@ -80,6 +80,7 @@ export function render(root, state) {
     ui.range = b.dataset.range; sessionStorage.setItem('ribak:range', ui.range); render(root, state);
   }));
   root.querySelector('[data-load-ads]')?.addEventListener('click', openAdsLoader);
+  root.querySelector('[data-ad-spend]')?.addEventListener('click', openSpendDialog);
   root.querySelector('[data-source]')?.addEventListener('change', e => {
     ui.source = e.target.value; sessionStorage.setItem('ribak:source', ui.source); render(root, state);
   });
@@ -149,56 +150,115 @@ function adsPanel(leads) {
 // One video, two ways in. Meta knows what each ad cost; only this side knows
 // which leads ended up paying, so the table stops at paying customers and
 // the division by spend is done against Meta's numbers.
-function abTestPanel(leads) {
+// ---- what the campaign brings in ----------------------------------------
+// One line per ad, read left to right as the money does: what it cost, how
+// many leads that bought, how many of them closed, what they paid.
+const PAID_SOURCE = 'אינסטגרם – ממומן';
+const shekel = n => `₪${n < 100 ? fmtNum(Math.round(n * 10) / 10) : fmtNum(Math.round(n))}`;
+
+function campaignRows(leads) {
   const names = store.getAds();
-  const cell = () => ({ leads: 0, paying: 0, revenue: 0 });
-  const grid = new Map(AD_VIDEOS.map(v => [v.n, Object.fromEntries(AD_ARMS.map(a => [a.id, cell()]))]));
-  const total = Object.fromEntries(AD_ARMS.map(a => [a.id, cell()]));
+  const spend = store.getAdSpend();
+  const blank = (label, sub = '') => ({ label, sub, spend: null, leads: 0, trial: 0, subs: 0, revenue: 0, noAmount: 0 });
+  const ads = testAds().map(ad => ({ ...blank(ad.code, `${ad.videoName} · ${ad.creator}`), ad,
+    spend: Number.isFinite(spend.byAd[ad.id]) ? spend.byAd[ad.id] : null }));
+  const byId = new Map(ads.map(r => [r.ad.id, r]));
+  const stray = blank('ממומן בלי מזהה מודעה', 'בעיקר מהבוט, שעוד לא מעביר את המזהה');
   const unknown = new Map();
+  const count = (r, l) => {
+    r.leads++;
+    if (isPaying(l)) { r.trial++; if (!paidTotal(l)) r.noAmount++; }
+    if (everSubscribed(l)) r.subs++;
+    r.revenue += paidTotal(l);
+  };
   for (const l of leads) {
+    if (l.contactOnly) continue;
     const ad = adInfo(l.adId, names);
-    if (!ad || l.contactOnly) continue;
-    if (!ad.known) { unknown.set(ad.id, (unknown.get(ad.id) || 0) + 1); continue; }
-    if (!ad.code) continue;
-    for (const c of [grid.get(ad.video)[ad.arm], total[ad.arm]]) {
-      c.leads++;
-      if (isPaying(l)) { c.paying++; c.revenue += paidTotal(l); }
-    }
+    if (ad && byId.has(ad.id)) { count(byId.get(ad.id), l); continue; }
+    if (ad && ad.retired) continue;
+    if (ad && !ad.known) unknown.set(ad.id, (unknown.get(ad.id) || 0) + 1);
+    if ((!ad || !ad.known) && l.source === PAID_SOURCE && String(l.createdAt || '') >= AD_TEST_START) count(stray, l);
   }
-  const any = AD_ARMS.some(a => total[a.id].leads);
-  if (!any && !unknown.size) return '';
-  // The same numbers once more, added up per creator.
-  const creators = [...new Set(AD_VIDEOS.map(v => v.creator))].map(name => {
-    const vids = AD_VIDEOS.filter(v => v.creator === name);
-    const sum = Object.fromEntries(AD_ARMS.map(a => [a.id, vids.reduce((c, v) => {
-      const g = grid.get(v.n)[a.id];
-      return { leads: c.leads + g.leads, paying: c.paying + g.paying };
-    }, { leads: 0, paying: 0 })]));
-    return { name, videos: vids.map(v => v.n).join('+'), sum };
-  });
-  const pair = c => `<td class="num">${fmtNum(c.leads)}</td><td class="num"><b>${fmtNum(c.paying)}</b>${c.leads ? ` <small class="muted">${pct1(c.paying, c.leads)}%</small>` : ''}</td>`;
-  const revenue = AD_ARMS.filter(a => total[a.id].revenue).map(a => `${a.label} ₪${fmtNum(total[a.id].revenue)}`);
-  const ids = [...unknown.keys()];
+  const sum = (label, rows, sub = '') => rows.reduce((t, r) => ({
+    ...t, leads: t.leads + r.leads, trial: t.trial + r.trial, subs: t.subs + r.subs, revenue: t.revenue + r.revenue,
+    noAmount: t.noAmount + r.noAmount,
+    spend: r.spend === null ? t.spend : (t.spend || 0) + r.spend,
+  }), blank(label, sub));
+  const arms = AD_ARMS.map(a => ({ arm: a, rows: ads.filter(r => r.ad.arm === a.id) }))
+    .map(g => ({ ...g, total: sum(`${g.arm.label} (${g.arm.letter})`, g.rows) }));
+  const creators = [...new Set(AD_VIDEOS.map(v => v.creator))]
+    .map(name => sum(name, ads.filter(r => r.ad.creator === name), `סרטונים ${AD_VIDEOS.filter(v => v.creator === name).map(v => v.n).join('+')}`));
+  return { arms, creators, stray, unknown, spendAt: spend.at, total: sum('סה"כ קמפיין', [...ads, stray]) };
+}
+
+function campaignPanel(leads) {
+  const c = campaignRows(leads);
+  const t = c.total;
+  if (!t.leads && t.spend === null && !c.unknown.size) return '';
+  const per = (a, b) => (a !== null && b ? shekel(a / b) : '–');
+  const line = (r, cls = '') => `<tr class="${cls}">
+      <td>${esc(r.label)}${r.sub ? ` <small class="muted">${esc(r.sub)}</small>` : ''}</td>
+      <td class="num">${r.spend === null ? '–' : shekel(r.spend)}</td>
+      <td class="num">${fmtNum(r.leads)}</td>
+      <td class="num">${per(r.spend, r.leads)}</td>
+      <td class="num">${r.trial ? `<b>${fmtNum(r.trial)}</b> <small class="muted">${pct1(r.trial, r.leads)}%</small>` : '0'}</td>
+      <td class="num">${per(r.spend, r.trial)}</td>
+      <td class="num">${fmtNum(r.subs)}</td>
+      <td class="num">${r.revenue ? shekel(r.revenue) : '–'}</td>
+      <td class="num">${r.spend && r.revenue ? `×${(r.revenue / r.spend).toFixed(1)}` : '–'}</td>
+    </tr>`;
+  const tile = (label, value, sub = '') => `<div class="kpi"><span class="kpi__label">${label}</span><span class="kpi__value">${value}</span><span class="kpi__sub">${sub}</span></div>`;
+  const ids = [...c.unknown.keys()];
+  const missing = t.noAmount;
   return `<section class="panel">
-    <header class="panel__head"><div><h2>דף נחיתה מול DM</h2>
-      <p class="muted">אותם ארבעה סרטונים בשתי דרכים · כמה לידים הביא כל סרטון וכל יוצרת, וכמה מהם שילמו</p></div></header>
+    <header class="panel__head"><div><h2>כמה הקמפיין מכניס</h2>
+      <p class="muted">דף נחיתה מול DM, אותם ארבעה סרטונים · מה כל מודעה עלתה, כמה לידים הביאה, כמה סגרו וכמה שילמו</p></div>
+      <div><button class="btn btn--sm" data-ad-spend>עדכון הוצאה ממטא</button>
+        <p class="muted">${c.spendAt ? `הוצאה מעודכנת ל-${esc(fmtDateTime(c.spendAt))}` : 'ההוצאה עוד לא הוזנה'}</p></div></header>
     ${ids.length ? `<p class="ad-alert"><b>${fmtNum(ids.length)} ${ids.length === 1 ? 'מזהה מודעה לא מזוהה' : 'מזהי מודעות לא מזוהים'}</b>
-      (${(n => plural(n, 'ליד אחד', `${fmtNum(n)} לידים`))([...unknown.values()].reduce((a, b) => a + b, 0))}) – צריך לשלוח למי שמנהל את הקמפיין:
+      (${(n => plural(n, 'ליד אחד', `${fmtNum(n)} לידים`))([...c.unknown.values()].reduce((a, b) => a + b, 0))}) – צריך לשלוח למי שמנהל את הקמפיין:
       <span dir="ltr">${ids.map(esc).join(', ')}</span> ${copyBtn(ids.join(', '), 'העתקת המזהים')}</p>` : ''}
-    ${any ? `<div class="table-wrap"><table class="table table--ab">
-      <thead>
-        <tr><th rowspan="2">סרטון</th>${AD_ARMS.map(a => `<th colspan="2" class="ab-arm">${esc(a.label)} (${a.letter})</th>`).join('')}</tr>
-        <tr>${AD_ARMS.map(() => `<th class="num">לידים</th><th class="num">משלמים</th>`).join('')}</tr>
-      </thead>
+    <div class="kpis kpis--camp">
+      ${tile('הוצאה', t.spend === null ? '–' : shekel(t.spend))}
+      ${tile('לידים', fmtNum(t.leads), t.spend !== null && t.leads ? `${shekel(t.spend / t.leads)} לליד` : '')}
+      ${tile('סגרו ניסיון', fmtNum(t.trial), t.spend !== null && t.trial ? `${shekel(t.spend / t.trial)} ללקוח` : '')}
+      ${tile('מנויים', fmtNum(t.subs))}
+      ${tile('הכנסה', t.revenue ? shekel(t.revenue) : '–', missing > 0 ? `${plural(missing, 'ללקוח אחד', `ל-${fmtNum(missing)} לקוחות`)} לא נרשם סכום` : '')}
+      ${tile('החזר', t.spend && t.revenue ? `×${(t.revenue / t.spend).toFixed(1)}` : '–', t.spend && t.revenue ? 'הכנסה חלקי הוצאה' : '')}
+    </div>
+    <div class="table-wrap"><table class="table table--camp">
+      <thead><tr><th>מודעה</th><th class="num">הוצאה</th><th class="num">לידים</th><th class="num">עלות לליד</th>
+        <th class="num">סגרו ניסיון</th><th class="num">עלות ללקוח</th><th class="num">מנויים</th><th class="num">הכנסה</th><th class="num">החזר</th></tr></thead>
       <tbody>
-        ${AD_VIDEOS.map(v => `<tr><td>${v.n} · ${esc(v.name)} <small class="muted">${esc(v.creator)}</small></td>${AD_ARMS.map(a => pair(grid.get(v.n)[a.id])).join('')}</tr>`).join('')}
-        ${creators.map((c, i) => `<tr class="ab-creator ${i ? '' : 'ab-total'}"><td>${esc(c.name)} <small class="muted">סרטונים ${c.videos}</small></td>${AD_ARMS.map(a => pair(c.sum[a.id])).join('')}</tr>`).join('')}
-        <tr class="ab-total"><td>סה"כ</td>${AD_ARMS.map(a => pair(total[a.id])).join('')}</tr>
+        ${c.arms.map(g => g.rows.map(r => line(r)).join('') + line(g.total, 'camp-sum')).join('')}
+        ${c.creators.map((r, i) => line(r, `camp-creator ${i ? '' : 'camp-first'}`)).join('')}
+        ${c.stray.leads ? line(c.stray, 'camp-first') : ''}
+        ${line(t, 'camp-total')}
       </tbody>
     </table></div>
-    <p class="panel__note">משלם = סגר שבוע ניסיון, או שנרשם לו תשלום בכרטיס.${revenue.length ? ` הכנסה שנרשמה: ${esc(revenue.join(' · '))}.` : ''}
-      את ההוצאה לכל מודעה לוקחים ממטא ומחלקים במספר המשלמים.</p>` : ''}
+    <p class="panel__note">סגר ניסיון = הגיע לשלב "סגר שבוע ניסיון" ומעלה, או שנרשם לו תשלום. הכנסה = הסכומים שנרשמו בכרטיסי הלקוחות.
+      החזר = הכנסה חלקי הוצאה. לידים בלי מזהה מודעה נספרים רק בשורת "ממומן בלי מזהה" ובסה"כ.</p>
   </section>`;
+}
+
+function openSpendDialog() {
+  const spend = store.getAdSpend();
+  const m = openModal({
+    title: 'הוצאה לכל מודעה',
+    body: `
+      <form class="form form--spend" id="spend-form">
+        <p class="modal__text">כמה כל מודעה עלתה עד עכשיו, בשקלים, כמו שמופיע במטא בעמודת "הסכום שהוצא".</p>
+        ${testAds().map(ad => field(`${ad.code} · ${ad.armLabel} · ${ad.videoName}`,
+          `<input class="input" name="${esc(ad.id)}" type="number" inputmode="decimal" min="0" step="any" value="${esc(spend.byAd[ad.id] ?? '')}">`)).join('')}
+      </form>`,
+    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="spend-form">שמירה</button>`,
+  });
+  m.el.querySelector('#spend-form').addEventListener('submit', e => {
+    e.preventDefault();
+    store.saveAdSpend(formData(e.target));
+    toast('ההוצאה עודכנה', 'good');
+    m.close();
+  });
 }
 
 function openAdsLoader() {

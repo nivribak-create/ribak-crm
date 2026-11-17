@@ -30,24 +30,33 @@ function payLine(lead) {
     <button class="linkish" data-act="pay" data-id="${lead.id}">${n ? 'תשלום נוסף' : 'רשום סכום'}</button></div>`;
 }
 
-export function openPaymentDialog(lead) {
+export function openPaymentDialog(lead, { stage = '' } = {}) {
+  // Asked on the spot when a sale closes, and skippable: a missing amount can
+  // be added from the card later, a nagging dialog gets closed without reading.
+  const closing = STAGE_BY_ID[stage];
   const m = openModal({
-    title: `תשלום של ${lead.name}`,
+    title: closing ? `${closing.done}: ${lead.name}` : `תשלום של ${lead.name}`,
     body: `
       <form class="form" id="pay-form">
-        ${field('כמה שילם (₪)', `<input class="input" name="amount" type="number" inputmode="decimal" min="1" step="any" required autofocus>`)}
+        ${field(closing ? 'כמה שילם עכשיו (₪)' : 'כמה שילם (₪)', `<input class="input" name="amount" type="number" inputmode="decimal" min="1" step="any" required autofocus>`)}
         ${field('מתי', `<input class="input" name="day" type="date" value="${esc(todayIso())}" max="${esc(todayIso())}">`)}
+        ${closing ? '<p class="field__hint">לפי הסכום הזה מחושב כמה כל מקור וכל מודעה מכניסים. אפשר לדלג ולהוסיף אחר כך מהכרטיס.</p>' : ''}
       </form>`,
-    footer: `<button class="btn" data-close>ביטול</button><button class="btn btn--primary" type="submit" form="pay-form">שמירה</button>`,
+    footer: `<button class="btn" data-close>${closing ? 'דלג' : 'ביטול'}</button><button class="btn btn--primary" type="submit" form="pay-form">שמירה</button>`,
   });
   m.el.querySelector('#pay-form').addEventListener('submit', e => {
     e.preventDefault();
     const d = formData(e.target);
-    if (!store.recordPayment(lead.id, d.amount, d.day)) { toast('צריך סכום גדול מאפס', 'warn'); return; }
+    if (!store.recordPayment(lead.id, d.amount, d.day, stage)) { toast('צריך סכום גדול מאפס', 'warn'); return; }
     toast(`נרשם תשלום של ${money(Number(d.amount))} · ${lead.name}`, 'good');
     m.close();
   });
 }
+// The store says a sale closed; this is the one place that asks what was paid.
+document.addEventListener('ribak:closed', e => {
+  const lead = store.getLead(e.detail.id);
+  if (lead) openPaymentDialog(lead, { stage: e.detail.stage });
+});
 
 const everSubscribedSafe = l => l.status === 'won' || l.status === 'churned';
 

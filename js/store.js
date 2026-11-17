@@ -5,7 +5,7 @@
 // Every mutation goes through a function here so the event timeline stays
 // consistent in both modes.
 
-import { STAGES, stageIndex, nextStage, FINAL_STAGE, LEGACY_STAGES, LEGACY_REASONS, LEGACY_SOURCES, SOURCES, UNKNOWN_SOURCE, STATUSES } from './model.js';
+import { STAGES, stageIndex, nextStage, FINAL_STAGE, MONEY_STAGES, LEGACY_STAGES, LEGACY_REASONS, LEGACY_SOURCES, SOURCES, UNKNOWN_SOURCE, STATUSES } from './model.js';
 import { uid, nowIso, isoDay, addDays, normPhone, cleanPhone, deliverySundayFor } from './util.js';
 import * as api from './api.js';
 
@@ -254,7 +254,14 @@ export function addNote(id, text) {
 }
 
 // Move a lead forward one step (or straight to a given stage).
+// A sale just closed: whoever is showing the screen asks what was paid. Said
+// here, once, so every way of moving a lead forward asks the same question.
+const closed = (id, stage) => {
+  if (MONEY_STAGES.includes(stage)) document.dispatchEvent(new CustomEvent('ribak:closed', { detail: { id, stage } }));
+};
+
 export function advanceLead(id, toStage = null) {
+  let reached = null;
   patchLead(id, l => {
     const target = toStage ? STAGES.find(s => s.id === toStage) : nextStage(l.stage);
     if (!target || stageIndex(target.id) <= stageIndex(l.stage)) return;
@@ -264,16 +271,20 @@ export function advanceLead(id, toStage = null) {
     l.status = target.id === FINAL_STAGE ? 'won' : 'active';
     l.lostReason = null; l.lostAt = null;
     l.events.push({ t: nowIso(), type: 'advanced', stage: target.id });
+    reached = target.id;
   });
+  if (reached) closed(id, reached);
 }
 
 // Dragging a card puts it wherever it was dropped — forwards, backwards,
 // or out of the lost pile — which plain advancing deliberately refuses.
 export function moveToStage(id, stageId) {
   if (!STAGES.some(s => s.id === stageId)) return;
+  let reached = null;
   patchLead(id, l => {
     const forward = stageIndex(stageId) > stageIndex(l.stage);
     if (l.stage === stageId && l.status === 'active') return;
+    if (forward) reached = stageId;
     l.stage = stageId;
     l.status = stageId === FINAL_STAGE ? 'won' : 'active';
     l.lostReason = null;
@@ -281,6 +292,7 @@ export function moveToStage(id, stageId) {
     if (forward) { l.attempts = 0; l.nextAt = null; }
     l.events.push({ t: nowIso(), type: forward ? 'advanced' : 'moved', stage: stageId });
   });
+  if (reached) closed(id, reached);
 }
 
 export function markLost(id, reasonId, note = '') {
@@ -448,13 +460,14 @@ export function recordOrder(id) {
 }
 // Money that came in, on the day it came in. Kept on the timeline so the
 // cost of a paying customer can be worked out per ad.
-export function recordPayment(id, amount, day = '') {
+export function recordPayment(id, amount, day = '', stage = '') {
   const sum = Math.round(Number(amount) * 100) / 100;
   if (!(sum > 0)) return false;
   patchLead(id, l => {
     const today = isoDay(new Date());
     const t = /^\d{4}-\d{2}-\d{2}$/.test(day) && day < today ? new Date(`${day}T12:00:00`).toISOString() : nowIso();
-    l.events.push({ t, type: 'paid', amount: sum });
+    // What the money was for — a trial week, another week, a subscription.
+    l.events.push({ t, type: 'paid', amount: sum, ...(MONEY_STAGES.includes(stage) ? { stage } : {}) });
     l.events.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
   });
   return true;
@@ -495,6 +508,23 @@ export const getInfluencers = () => (Array.isArray(state.settings.influencers) ?
 
 // Meta hands a lead an ad id and nothing else, so the names behind those
 // ids live here: { "<adId>": { ad, adset, campaign } }.
+// What each ad has cost so far, copied over from Meta: { at, byAd: { "<adId>": ₪ } }.
+// Income is only half of "what does the campaign bring in".
+export const getAdSpend = () => {
+  const v = state.settings.adSpend;
+  return v && typeof v === 'object' && v.byAd && typeof v.byAd === 'object' ? v : { at: null, byAd: {} };
+};
+export function saveAdSpend(map) {
+  const byAd = {};
+  for (const [id, v] of Object.entries(map || {})) {
+    const key = String(id).replace(/[^0-9]/g, '').slice(0, 32);
+    const sum = Math.round(Number(v) * 100) / 100;
+    if (key && String(v).trim() !== '' && sum >= 0) byAd[key] = sum;
+  }
+  commit(state.leads, { ...state.settings, adSpend: { at: nowIso(), byAd } }, { settings: true });
+  return Object.keys(byAd).length;
+}
+
 export const getAds = () => (state.settings.ads && typeof state.settings.ads === 'object' ? state.settings.ads : {});
 export function saveAds(map) {
   const clean = {};

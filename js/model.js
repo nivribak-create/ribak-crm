@@ -177,6 +177,13 @@ export function adInfo(adId, names = {}) {
   return { ...base, known: Boolean(label), label: label || 'לא מזוהה' };
 }
 
+// The eight test ads in reading order: the landing-page arm, then the DM arm.
+export const testAds = () => AD_ARMS.flatMap(a => AD_VIDEOS.map(v =>
+  adInfo(Object.keys(TEST_ADS).find(id => TEST_ADS[id][0] === a.id && TEST_ADS[id][1] === v.n))));
+// The day the test went live. A paid lead from then on that carries no ad id
+// still came from this campaign — the bot does not pass the id along yet.
+export const AD_TEST_START = '2026-11-16';
+
 // ---- payments ------------------------------------------------------------
 // A payment is a line on the timeline like everything else. Closing a trial
 // week is itself a payment, so a customer counts as paying from that step on
@@ -184,6 +191,8 @@ export function adInfo(adId, names = {}) {
 export const payments = l => (l.events || []).filter(e => e.type === 'paid');
 export const paidTotal = l => payments(l).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 export const isPaying = l => payments(l).length > 0 || stageIndex(l.stage) >= stageIndex('trial');
+// The steps where money changes hands, so that is when the amount is asked.
+export const MONEY_STAGES = ['trial', 'repeat', 'subscribed'];
 
 // ---- message rounds to the people who order now and then ---------------
 // One rule carries the whole rhythm: nobody hears from you twice inside two
