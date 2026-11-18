@@ -1183,12 +1183,6 @@ body.is-dragging-card { user-select: none; -webkit-user-select: none; }
 .kpis--camp .kpi__value { font-size: 28px; }
 .form--spend .field { display: grid; grid-template-columns: 1fr 120px; align-items: center; gap: 10px; }
 
-/* pressed "yes" in a round message */
-.col--yes .col__dot { background: var(--good); }
-.col--yes { background: var(--accent-soft); }
-.col--yes .col__head { background: var(--accent-soft); }
-.card--yes { border-inline-start: 3px solid var(--good); }
-
 /* The bell carries a dot while this device gets lead notifications. */
 #push-btn { position: relative; }
 #push-btn.is-on { color: var(--accent, #0F7A84); }

@@ -44,14 +44,12 @@ function boardHtml(state, today) {
       .sort((a, b) => sortKey(a, today) - sortKey(b, today)),
   }));
   const lostLeads = onBoard.filter(l => l.status === 'lost' || l.status === 'churned').sort((a, b) => (a.lostAt < b.lostAt ? 1 : -1));
-  // Whoever pressed "yes" in a round message comes first on the board, ahead
-  // of the new leads: they asked for food and are waiting to hear back.
-  const saidYes = leads.filter(l => awaitingCallback(l))
-    .sort((a, b) => (awaitingCallback(a).t < awaitingCallback(b).t ? -1 : 1));
-  const occasional = leads.filter(l => l.status === 'occasional' && !awaitingCallback(l))
+  // Whoever pressed "yes" in a round message stays in this column, at its
+  // top, marked as waiting to hear back.
+  const occasional = leads.filter(l => l.status === 'occasional')
     .sort((a, b) => occRank(a) - occRank(b) || (a.updatedAt < b.updatedAt ? 1 : -1));
   return {
-    html: (saidYes.length ? yesColumn(saidYes) : '') + cols.map(c => column(c, today)).join('') + futureColumn(parked)
+    html: cols.map(c => column(c, today)).join('') + futureColumn(parked)
       + (occasional.length ? occasionalColumn(occasional) : '')
       + (ui.showLost ? lostColumn(lostLeads) : ''),
     lostCount: lostLeads.length,
@@ -329,42 +327,7 @@ const recentNudge = l => {
 };
 const awaitingReply = l => (recentNudge(l) && !roundAnswer(l) ? recentNudge(l) : null);
 const saidNotNow = l => { const a = recentNudge(l) && roundAnswer(l); return a && a.type === 'declined' ? a : null; };
-const occRank = l => (l.noMarketing ? 3 : upcomingOrder(l) ? 0 : awaitingReply(l) ? 1 : 2);
-
-function yesColumn(leads) {
-  return `<section class="col col--yes" data-stage="__yes" aria-label="ענו כן – לחזור אליהם">
-    <header class="col__head">
-      <span class="col__dot"></span>
-      <h2 class="col__title">ענו כן – לחזור אליהם</h2>
-      <span class="col__count">${fmtNum(leads.length)}</span>
-    </header>
-    <div class="col__body">
-      ${leads.map(l => {
-    const o = awaitingCallback(l);
-    return `<article class="card card--yes" data-id="${l.id}" tabindex="0">
-        <div class="card__top">
-          <b class="card__name">${esc(l.name)}</b>
-          <span class="card__source">${esc(sourceLabel(l))}</span>
-        </div>
-        <div class="card__meta">
-          <span class="card__phone-wrap">
-            <a class="card__phone" href="${telLink(l.phone)}">${esc(fmtPhone(l.phone))}</a>
-            ${copyBtn(l.phone)}
-          </span>
-          <a class="card__wa" href="${waLink(l.phone)}" target="_blank" rel="noopener" title="פתח בוואטסאפ">וואטסאפ</a>
-        </div>
-        <div class="card__row">
-          <span class="tag tag--done">רוצה משלוח${o.week ? ` ל-${esc(fmtDate(o.week))}` : ''}</span>
-          <span class="muted">לחץ ${esc(relDays(o.t))}</span>
-        </div>
-        <div class="card__actions">
-          <button class="btn btn--sm btn--primary" data-act="confirm" data-id="${l.id}" title="דיברת איתו וההזמנה סגורה">✓ סגרתי איתו</button>
-        </div>
-      </article>`;
-  }).join('')}
-    </div>
-  </section>`;
-}
+const occRank = l => (l.noMarketing ? 4 : awaitingCallback(l) ? 0 : upcomingOrder(l) ? 1 : awaitingReply(l) ? 2 : 3);
 
 function occasionalColumn(leads) {
   return `<section class="col col--occasional" data-stage="__occasional" aria-label="מזמינים מדי פעם">
@@ -376,7 +339,7 @@ function occasionalColumn(leads) {
     </header>
     <div class="col__body">
       ${leads.map(l => {
-    const order = upcomingOrder(l), waiting = awaitingReply(l);
+    const yes = awaitingCallback(l), order = !yes && upcomingOrder(l), waiting = awaitingReply(l);
     return `<article class="card card--occasional ${l.noMarketing ? 'is-off' : ''}" data-id="${l.id}" tabindex="0">
         <div class="card__top">
           <b class="card__name">${esc(l.name)}</b>
@@ -391,15 +354,17 @@ function occasionalColumn(leads) {
           <a class="card__wa" href="${waLink(l.phone)}" target="_blank" rel="noopener" title="פתח בוואטסאפ">וואטסאפ</a>
         </div>
         <div class="card__row">
+          ${yes ? `<span class="tag tag--done">רוצה משלוח${yes.week ? ` ל-${esc(fmtDate(yes.week))}` : ''}</span><span class="muted">לחץ ${esc(relDays(yes.t))}</span>` : ''}
           ${order ? `<span class="tag tag--done">✓ הזמין ל-${esc(fmtDate(order.week))}</span>` : ''}
-          ${!order && waiting ? `<span class="tag tag--warn">נשלח ${esc(fmtDate(waiting.t))} · עוד לא ענה</span>` : ''}
-          ${!order && saidNotNow(l) ? '<span class="tag">ענה: לא הפעם</span>' : ''}
+          ${!yes && !order && waiting ? `<span class="tag tag--warn">נשלח ${esc(fmtDate(waiting.t))} · עוד לא ענה</span>` : ''}
+          ${!yes && !order && saidNotNow(l) ? '<span class="tag">ענה: לא הפעם</span>' : ''}
           ${l.noMarketing ? '<span class="tag">הוסר מהודעות</span>' : ''}
         </div>
         <div class="card__actions">
           ${l.noMarketing
       ? `<button class="btn btn--sm btn--ghost" data-act="optin" data-id="${l.id}">החזר להודעות</button>`
-      : `${order ? '' : `<button class="btn btn--sm btn--primary" data-act="ordered" data-id="${l.id}">✓ הזמין</button>`}
+      : `${yes ? `<button class="btn btn--sm btn--primary" data-act="confirm" data-id="${l.id}" title="דיברת איתו וההזמנה סגורה">✓ סגרתי איתו</button>`
+        : order ? '' : `<button class="btn btn--sm btn--primary" data-act="ordered" data-id="${l.id}">✓ הזמין</button>`}
              <button class="btn btn--sm btn--ghost btn--lost" data-act="optout" data-id="${l.id}" title="לא לשלוח לו יותר הודעות">הסר</button>`}
         </div>
       </article>`;
