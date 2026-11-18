@@ -311,7 +311,8 @@ leadsRouter.put('/settings', wrap(async (req, res) => {
 
 // ---- inbound leads from automations --------------------------------------
 // POST /api/inbound/lead  (header X-Webhook-Key: <WEBHOOK_SECRET>, or ?key=)
-// Body: { name?, phone?, text?, source?, notes?, username? }
+// Body: { name?, phone?, text?, source?, notes?, username?, ad_id?,
+//         ad_name?, adset_name?, campaign_name? }
 // The phone may arrive in `phone` or anywhere inside `text` (an Instagram
 // DM, say). A lead that already exists with that phone gets a note instead
 // of a duplicate.
@@ -415,7 +416,8 @@ function leadMail(lead, o = {}) {
   const name = oneLine(o.name || lead.name) || 'בלי שם';
   const phone = String(lead.phone || '').replace(/\D/g, '');
   const adId = o.adId || lead.adId || '';
-  const ad = adId ? (MAIL_ADS[adId] || `לא מזוהה (${adId})`) : '';
+  const own = lead.adId === adId && lead.adNames ? oneLine(lead.adNames.ad) : '';
+  const ad = adId ? (MAIL_ADS[adId] || own || `לא מזוהה (${adId})`) : '';
   const code = ad && MAIL_ADS[adId] ? ad.split(' · ').slice(0, 2).join(' ') : '';
   const when = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const rows = [
@@ -537,7 +539,8 @@ async function pushAll(payload) {
 function leadPush(lead, o = {}) {
   const name = oneLine(o.name || lead.name) || 'בלי שם';
   const adId = o.adId || lead.adId || '';
-  const ad = adId ? (MAIL_ADS[adId] ? MAIL_ADS[adId].split(' · ').slice(0, 2).join(' ') : 'מודעה לא מזוהה') : '';
+  const own = lead.adId === adId && lead.adNames ? oneLine(lead.adNames.ad) : '';
+  const ad = adId ? (MAIL_ADS[adId] ? MAIL_ADS[adId].split(' · ').slice(0, 2).join(' ') : own || 'מודעה לא מזוהה') : '';
   return {
     title: `${o.repeat ? 'פנייה חוזרת' : 'ליד חדש'}: ${name}`.slice(0, 80),
     body: [ad || oneLine(o.source || lead.source), String(lead.phone || '')].filter(Boolean).join(' · ').slice(0, 120),
@@ -576,6 +579,12 @@ async function ingestLead(b) {
   // A click-to-DM ad hands the conversation the id of the ad it came from,
   // which is the only way to tell which of eleven creatives earned a lead.
   const adId = String(b.ad_id || b.adId || '').replace(/[^0-9]/g, '').slice(0, 32);
+  // A sender that knows what the ad is called says so, and then an ad added
+  // after the table in js/model.js was written still arrives with a name
+  // instead of a bare number.
+  const adText = v => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const adNames = adId && adText(b.ad_name || b.adName)
+    ? { ad: adText(b.ad_name || b.adName), adset: adText(b.adset_name), campaign: adText(b.campaign_name) } : null;
   // Meta delivers a webhook at least once, so the same form submission can
   // arrive twice; its own id is what tells the two apart from a real repeat.
   const leadgenId = String(b.leadgen_id || '').replace(/[^0-9]/g, '').slice(0, 32);
@@ -613,6 +622,7 @@ async function ingestLead(b) {
     const stolen = influencer && credited && credited !== influencer;
     if (influencer && !credited) { existing.influencer = influencer; existing.source = INFLUENCER_SOURCE; }
     if (adId && !existing.adId) existing.adId = adId;
+    if (adNames && existing.adId === adId && !existing.adNames) existing.adNames = adNames;
     existing.events = [
       ...(existing.events || []),
       { t: now, type: 'note', text: `פנייה חוזרת (${source})${influencer ? ' · ' + influencer : ''}${noteText ? ' · ' + noteText : ''}` },
@@ -627,6 +637,7 @@ async function ingestLead(b) {
   }
   const lead = {
     id: newId(), name, phone, source, influencer, adId,
+    ...(adNames ? { adNames } : {}),
     leadgenIds: leadgenId ? [leadgenId] : [],
     // A form behind an influencer's link: a cold lead, counted apart from
     // the people who came asking about the food.

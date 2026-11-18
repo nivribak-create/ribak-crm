@@ -160,12 +160,13 @@ const RETIRED_ADS = new Set([
 ]);
 
 // Everything worth saying about the ad behind a lead. `names` is the list
-// loaded from Meta for ads outside the test; an id found in neither place
+// loaded from Meta for ads outside the test, and `own` is the name the lead
+// itself arrived with, when its sender knew it. An id with no name anywhere
 // is the one case that needs a person: it comes back with known:false.
-export function adInfo(adId, names = {}) {
+export function adInfo(adId, names = {}, own = null) {
   const id = String(adId || '');
   if (!id) return null;
-  const named = names[id] || {};
+  const named = names[id] || own || {};
   const base = { id, code: '', arm: '', armLabel: '', video: 0, videoName: '', creator: '', retired: false, known: true,
     campaign: named.campaign || '', adset: named.adset || '' };
   const test = TEST_ADS[id];

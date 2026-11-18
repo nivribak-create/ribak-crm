@@ -627,6 +627,10 @@ function normalizeLead(raw) {
     roundToken: /^[a-z0-9]{8,64}$/.test(raw.roundToken || '') ? raw.roundToken : '',
     deliveryWeek: /^\d{4}-\d{2}-\d{2}$/.test(raw.deliveryWeek || '') ? raw.deliveryWeek : '',
     adId: String(raw.adId || '').replace(/[^0-9]/g, '').slice(0, 32),
+    // What the ad was called, when whoever sent the lead knew it.
+    ...(raw.adNames && typeof raw.adNames === 'object' && String(raw.adNames.ad || '').trim() ? {
+      adNames: Object.fromEntries(['ad', 'adset', 'campaign'].map(k => [k, String(raw.adNames[k] || '').trim().slice(0, 160)])),
+    } : {}),
     // Meta's own ids for the form submissions behind this lead, kept so a
     // webhook delivered twice is recognised as one lead.
     leadgenIds: Array.isArray(raw.leadgenIds) ? raw.leadgenIds.map(x => String(x).replace(/[^0-9]/g, '')).filter(Boolean).slice(-20) : [],

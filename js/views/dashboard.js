@@ -114,7 +114,7 @@ function adsPanel(leads) {
   const names = store.getAds();
   const by = new Map();
   for (const l of leads) {
-    const ad = adInfo(l.adId, names);
+    const ad = adInfo(l.adId, names, l.adNames);
     // Paused ads were asked to be left out of the picture altogether.
     if (!ad || ad.retired || l.contactOnly) continue;
     const row = by.get(ad.id) || { ad, total: 0, trial: 0, paying: 0, won: 0 };
@@ -171,7 +171,7 @@ function campaignRows(leads) {
   };
   for (const l of leads) {
     if (l.contactOnly) continue;
-    const ad = adInfo(l.adId, names);
+    const ad = adInfo(l.adId, names, l.adNames);
     if (ad && byId.has(ad.id)) { count(byId.get(ad.id), l); continue; }
     if (ad && ad.retired) continue;
     if (ad && !ad.known) unknown.set(ad.id, (unknown.get(ad.id) || 0) + 1);

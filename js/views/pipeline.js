@@ -225,7 +225,7 @@ const sourceLabel = l => l.influencer || l.source;
 // A lead that came from an ad says so, and says which one — the creative
 // is the part worth knowing, not that it was paid.
 function adTag(l) {
-  const ad = adInfo(l.adId, store.getAds());
+  const ad = adInfo(l.adId, store.getAds(), l.adNames);
   if (!ad) return '';
   if (!ad.known) return `<span class="tag tag--warn" title="מזהה מודעה שאין לו שם: ${esc(ad.id)}">💰 לא מזוהה</span>`;
   return `<span class="tag tag--paid" title="${esc(ad.code ? `${ad.videoName} · ${ad.creator}` : ad.campaign || 'ליד ממומן')}">

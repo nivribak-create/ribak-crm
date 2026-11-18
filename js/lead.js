@@ -9,7 +9,7 @@ import { esc, fmtPhone, waLink, telLink, fmtDate, fmtDateLong, fmtDateTime, relD
 
 // Where a paid lead actually came from: campaign, audience, creative.
 function adLine(lead) {
-  const ad = adInfo(lead.adId, store.getAds());
+  const ad = adInfo(lead.adId, store.getAds(), lead.adNames);
   if (!ad) return '';
   const what = ad.code ? `${ad.armLabel} · ${ad.code} "${ad.videoName}" · ${ad.creator}`
     : ad.retired ? 'מודעה ישנה, לא חלק מהמבחן'
